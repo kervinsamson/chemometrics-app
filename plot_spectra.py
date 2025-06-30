@@ -1,184 +1,257 @@
 #
-# plot_spectra.py
+# plot_spectra_gui.py
 #
 # Description:
-# This script lets the user select one or multiple .spa spectral files
-# using a GUI file picker, reads the data, and plots them on a single graph.
-# It includes buttons to view the original spectra, their first derivative,
-# or their second derivative. A Home button allows returning to file selection
-# to add or remove files.
+# GUI app to:
+# - select .spa files
+# - display spectra
+# - allow entering numeric values for each file (future regression target)
+# - switch between original spectra, 1st derivative, and 2nd derivative
+# - return to Home to select new files
 #
 # Author: Kervin Ralph A. Samson
 # Date: 06/26/2025
 #
 
 import os
-import spectrochempy as spc
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Button
 import numpy as np
-from tkinter import filedialog, Tk
+import spectrochempy as spc
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+class SpectraViewerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Spectra Viewer")
 
-def choose_spa_files():
-    """
-    Opens a GUI file dialog to let the user select .spa files.
+        # Initialize data
+        self.file_paths = []
+        self.filenames = []
+        self.spectra_data = None
+        self.first_derivatives = None
+        self.second_derivatives = None
+        self.wavenumbers = None
 
-    Returns:
-        list of str: Paths to the selected files.
-    """
-    root = Tk()
-    root.withdraw()
+        self.user_values = {}
 
-    file_paths = filedialog.askopenfilenames(
-        title="Select one or more .spa files",
-        filetypes=[("Spectra files", "*.spa")]
-    )
+        # Create GUI layout
+        self.create_widgets()
 
-    return list(file_paths)
+    def create_widgets(self):
+        # Frame for file operations
+        top_frame = tk.Frame(self.root)
+        top_frame.pack(side=tk.TOP, fill=tk.X)
 
+        btn_load_all = tk.Button(top_frame, text="Load All .spa Files from Folder", command=self.load_all_files_from_folder)
+        btn_load_all.pack(side=tk.LEFT, padx=5, pady=5)
 
-def plot_spectra_from_files(file_paths):
-    """
-    Reads selected .spa files and plots spectra
-    with buttons to view derivatives.
+        btn_select_files = tk.Button(top_frame, text="Select Specific Files", command=self.select_files)
+        btn_select_files.pack(side=tk.LEFT, padx=5, pady=5)
 
-    Args:
-        file_paths (list): List of .spa file paths.
+        btn_plot = tk.Button(top_frame, text="Plot Spectra", command=self.plot_original)
+        btn_plot.pack(side=tk.LEFT, padx=5, pady=5)
 
-    Returns:
-        str: "home" if user clicked Home, "done" otherwise.
-    """
-    if not file_paths:
-        print("No files selected. Exiting.")
-        return "done"
+        btn_deriv1 = tk.Button(top_frame, text="1st Derivative", command=self.plot_derivative1)
+        btn_deriv1.pack(side=tk.LEFT, padx=5, pady=5)
 
-    print(f"Selected {len(file_paths)} files. Loading...")
+        btn_deriv2 = tk.Button(top_frame, text="2nd Derivative", command=self.plot_derivative2)
+        btn_deriv2.pack(side=tk.LEFT, padx=5, pady=5)
 
-    spectra_data = []
-    filenames = []
+        btn_home = tk.Button(top_frame, text="Reset", command=self.go_home)
+        btn_home.pack(side=tk.LEFT, padx=5, pady=5)
 
-    wavenumbers = None
+        # Split frame for table + plot
+        middle_frame = tk.Frame(self.root)
+        middle_frame.pack(fill=tk.BOTH, expand=True)
 
-    for file_path in file_paths:
-        try:
-            filename = os.path.basename(file_path)
-            nd = spc.read_spa(file_path)
+        # Table frame
+        table_frame = tk.Frame(middle_frame)
+        table_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
-            if wavenumbers is None:
-                wavenumbers = nd.x.data
+        tk.Label(table_frame, text="Loaded Files & Target Values").pack()
 
-            intensity = nd.data.squeeze()
+        columns = ("Filename", "Value")
+        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=20)
+        self.tree.heading("Filename", text="Filename")
+        self.tree.heading("Value", text="Target Value")
 
-            if nd.x.data.shape != intensity.shape:
-                print(f"Skipping {filename} due to shape mismatch: X={nd.x.data.shape}, Y={intensity.shape}")
-                continue
+        self.tree.column("Filename", width=200, anchor=tk.W)
+        self.tree.column("Value", width=100, anchor=tk.CENTER)
 
-            spectra_data.append(intensity)
-            filenames.append(filename)
+        self.tree.pack(fill=tk.Y)
 
-        except Exception as e:
-            print(f"Could not process file: {file_path}. Reason: {e}")
+        self.tree.bind('<Double-1>', self.on_double_click)
 
-    if not spectra_data:
-        print("No valid spectra loaded.")
-        return "done"
+        # Plot frame
+        plot_frame = tk.Frame(middle_frame)
+        plot_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-    # Convert to numpy array
-    spectra_data = np.vstack(spectra_data)
+        self.figure, self.ax = plt.subplots(figsize=(7, 5))
+        self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-    # Compute derivatives
-    first_derivatives = np.gradient(spectra_data, axis=1)
-    second_derivatives = np.gradient(first_derivatives, axis=1)
+    def load_all_files_from_folder(self):
+        folder_path = filedialog.askdirectory(title="Select folder containing .spa files")
+        if not folder_path:
+            return
 
-    plt.style.use('seaborn-v0_8-whitegrid')
-    fig, ax = plt.subplots(figsize=(12, 7))
-    plt.subplots_adjust(bottom=0.25)
+        file_paths = [
+            os.path.join(folder_path, f)
+            for f in os.listdir(folder_path)
+            if f.lower().endswith(".spa")
+        ]
 
-    def plot_data(data, title_suffix):
-        ax.clear()
+        if not file_paths:
+            messagebox.showerror("No Files", "No .spa files found in the selected folder.")
+            return
 
+        self.load_files_from_paths(file_paths)
+
+    def select_files(self):
+        file_paths = filedialog.askopenfilenames(
+            title="Select one or more .spa files",
+            filetypes=[("Spectra files", "*.spa")]
+        )
+        if not file_paths:
+            return
+
+        self.load_files_from_paths(file_paths)
+
+    def load_files_from_paths(self, file_paths):
+        # Reset previous data
+        self.file_paths = list(file_paths)
+        self.filenames = []
+        self.spectra_data = []
+        self.wavenumbers = None
+        self.user_values = {}
+
+        for path in self.file_paths:
+            try:
+                nd = spc.read_spa(path)
+                intensity = nd.data.squeeze()
+
+                if self.wavenumbers is None:
+                    self.wavenumbers = nd.x.data
+
+                if intensity.shape != nd.x.data.shape:
+                    print(f"Skipping {os.path.basename(path)} due to shape mismatch.")
+                    continue
+
+                self.spectra_data.append(intensity)
+                self.filenames.append(os.path.basename(path))
+                self.user_values[os.path.basename(path)] = 0.0
+
+            except Exception as e:
+                print(f"Error reading {path}: {e}")
+
+        if not self.spectra_data:
+            messagebox.showerror("Error", "No valid spectra loaded.")
+            return
+
+        self.spectra_data = np.vstack(self.spectra_data)
+        self.first_derivatives = np.gradient(self.spectra_data, axis=1)
+        self.second_derivatives = np.gradient(self.first_derivatives, axis=1)
+
+        self.populate_table()
+        self.plot_original()
+
+    def populate_table(self):
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+
+        for filename in self.filenames:
+            val = self.user_values.get(filename, 0.0)
+            self.tree.insert("", tk.END, values=(filename, val))
+
+    def on_double_click(self, event):
+        region = self.tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+
+        column = self.tree.identify_column(event.x)
+        row = self.tree.identify_row(event.y)
+
+        if column == "#2":
+            item = self.tree.item(row)
+            current_val = item["values"][1]
+            filename = item["values"][0]
+
+            new_val = self.prompt_for_value(current_val)
+            if new_val is not None:
+                self.tree.set(row, "Value", new_val)
+                self.user_values[filename] = float(new_val)
+
+    def prompt_for_value(self, current_val):
+        popup = tk.Toplevel(self.root)
+        popup.title("Edit Value")
+
+        tk.Label(popup, text="Enter new value:").pack(padx=10, pady=5)
+        entry = tk.Entry(popup)
+        entry.pack(padx=10, pady=5)
+        entry.insert(0, str(current_val))
+
+        val = None
+
+        def confirm():
+            nonlocal val
+            try:
+                val = float(entry.get())
+                popup.destroy()
+            except ValueError:
+                messagebox.showerror("Invalid input", "Please enter a numeric value.")
+
+        btn = tk.Button(popup, text="OK", command=confirm)
+        btn.pack(pady=5)
+
+        popup.grab_set()
+        self.root.wait_window(popup)
+        return val
+
+    def plot_original(self):
+        if self.spectra_data is None:
+            return
+        self.plot_data(self.spectra_data, "(Original Spectra)")
+
+    def plot_derivative1(self):
+        if self.first_derivatives is None:
+            return
+        self.plot_data(self.first_derivatives, "(1st Derivative)")
+
+    def plot_derivative2(self):
+        if self.second_derivatives is None:
+            return
+        self.plot_data(self.second_derivatives, "(2nd Derivative)")
+
+    def plot_data(self, data, title_suffix):
+        self.ax.clear()
         for i, y in enumerate(data):
-            ax.plot(wavenumbers, y, label=filenames[i])
+            self.ax.plot(self.wavenumbers, y, label=self.filenames[i])
 
-        ax.set_title(f"Spectra Viewer {title_suffix}", fontsize=16)
-        ax.set_xlabel('Wavenumber (cm⁻¹)', fontsize=12)
-        ax.set_ylabel('Absorbance / Intensity', fontsize=12)
-        ax.invert_xaxis()
-        ax.set_xlim(wavenumbers.max(), wavenumbers.min())
+        self.ax.set_title(f"Spectra Viewer {title_suffix}")
+        self.ax.set_xlabel("Wavenumber (cm⁻¹)")
+        self.ax.set_ylabel("Absorbance / Intensity")
+        self.ax.invert_xaxis()
+        self.ax.set_xlim(self.wavenumbers.max(), self.wavenumbers.min())
+        if len(self.filenames) <= 15:
+            self.ax.legend(fontsize='small')
+        self.ax.grid(True)
+        self.canvas.draw()
 
-        if len(filenames) <= 15:
-            ax.legend(title='Files', fontsize='small')
-        else:
-            print("\nMore than 15 files found. Skipping legend to avoid clutter.")
+    def go_home(self):
+        self.file_paths = []
+        self.filenames = []
+        self.spectra_data = None
+        self.first_derivatives = None
+        self.second_derivatives = None
+        self.wavenumbers = None
+        self.user_values = {}
+        self.tree.delete(*self.tree.get_children())
+        self.ax.clear()
+        self.canvas.draw()
 
-        ax.grid(True)
-        fig.canvas.draw_idle()
-
-    # Initial plot
-    plot_data(spectra_data, "(Original)")
-
-    # Buttons
-    ax_original = plt.axes([0.1, 0.05, 0.15, 0.075])
-    ax_deriv1 = plt.axes([0.3, 0.05, 0.2, 0.075])
-    ax_deriv2 = plt.axes([0.55, 0.05, 0.2, 0.075])
-    ax_home = plt.axes([0.8, 0.05, 0.15, 0.075])
-
-    btn_original = Button(ax_original, 'Original')
-    btn_deriv1 = Button(ax_deriv1, '1st Derivative')
-    btn_deriv2 = Button(ax_deriv2, '2nd Derivative')
-    btn_home = Button(ax_home, 'Home')
-
-    def on_original(event):
-        plot_data(spectra_data, "(Original)")
-
-    def on_deriv1(event):
-        plot_data(first_derivatives, "(1st Derivative)")
-
-    def on_deriv2(event):
-        plot_data(second_derivatives, "(2nd Derivative)")
-
-    home_clicked = {"flag": False}
-
-    def on_home(event):
-        home_clicked["flag"] = True
-        plt.close(fig)
-
-    btn_original.on_clicked(on_original)
-    btn_deriv1.on_clicked(on_deriv1)
-    btn_deriv2.on_clicked(on_deriv2)
-    btn_home.on_clicked(on_home)
-
-    plt.show()
-
-    if home_clicked["flag"]:
-        return "home"
-    else:
-        return "done"
-
-
-def run_app():
-    """
-    Runs the entire interactive loop of the program.
-    """
-    while True:
-        selected_files = choose_spa_files()
-
-        if not selected_files:
-            print("No files selected. Exiting program.")
-            break
-
-        result = plot_spectra_from_files(selected_files)
-
-        if result == "done":
-            # User closed the plot or did not press Home.
-            print("Exiting program.")
-            break
-        elif result == "home":
-            # User pressed Home. Loop again.
-            continue
-
-
-# --- Main execution block ---
 if __name__ == "__main__":
-    run_app()
+    root = tk.Tk()
+    app = SpectraViewerApp(root)
+    root.mainloop()
