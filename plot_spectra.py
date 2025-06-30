@@ -1,13 +1,8 @@
 #
-# plot_spectra_gui.py
+# plot_spectra_gui_styled_maroon_green.py
 #
 # Description:
-# GUI app to:
-# - select .spa files
-# - display spectra
-# - allow entering numeric values for each file (future regression target)
-# - switch between original spectra, 1st derivative, and 2nd derivative
-# - return to Home to select new files
+# Spectra Viewer GUI with maroon header and dark green buttons.
 #
 # Author: Kervin Ralph A. Samson
 # Date: 06/26/2025
@@ -26,7 +21,10 @@ class SpectraViewerApp:
         self.root = root
         self.root.title("Spectra Viewer")
 
-        # Initialize data
+        # Window background
+        self.root.configure(bg="#f7f2f2")
+
+        # Data initialization
         self.file_paths = []
         self.filenames = []
         self.spectra_data = None
@@ -36,59 +34,127 @@ class SpectraViewerApp:
 
         self.user_values = {}
 
-        # Create GUI layout
+        self.legend_visible = True          # NEW: Legend toggle flag
+        self.last_plot_type = None          # NEW: track last plotted type
+
+        self.create_styles()
         self.create_widgets()
 
+    def create_styles(self):
+        style = ttk.Style()
+        style.theme_use("clam")
+
+        # Treeview styling
+        style.configure("Treeview",
+                        background="#ffffff",
+                        foreground="#333333",
+                        rowheight=25,
+                        fieldbackground="#ffffff",
+                        font=("Segoe UI", 10))
+        style.configure("Treeview.Heading",
+                        background="#800000",
+                        foreground="white",
+                        font=("Segoe UI", 11, "bold"))
+        style.map("Treeview",
+                  background=[("selected", "#c1e0c1")],
+                  foreground=[("selected", "black")])
+
     def create_widgets(self):
-        # Frame for file operations
-        top_frame = tk.Frame(self.root)
-        top_frame.pack(side=tk.TOP, fill=tk.X)
+        # Header bar
+        header = tk.Label(self.root,
+                          text="Spectra Viewer",
+                          bg="#800000",
+                          fg="white",
+                          font=("Segoe UI", 18, "bold"),
+                          pady=10)
+        header.pack(fill=tk.X)
 
-        btn_load_all = tk.Button(top_frame, text="Load All .spa Files from Folder", command=self.load_all_files_from_folder)
-        btn_load_all.pack(side=tk.LEFT, padx=5, pady=5)
+        # Top frame
+        top_frame = tk.Frame(self.root, bg="#f7f2f2")
+        top_frame.pack(side=tk.TOP, fill=tk.X, pady=10)
 
-        btn_select_files = tk.Button(top_frame, text="Select Specific Files", command=self.select_files)
-        btn_select_files.pack(side=tk.LEFT, padx=5, pady=5)
+        btn_params = {
+            "bg": "#006400",
+            "fg": "white",
+            "activebackground": "#228B22",
+            "activeforeground": "white",
+            "font": ("Segoe UI", 10, "bold"),
+            "bd": 0,
+            "padx": 10,
+            "pady": 5,
+            "relief": tk.FLAT,
+        }
 
-        btn_plot = tk.Button(top_frame, text="Plot Spectra", command=self.plot_original)
-        btn_plot.pack(side=tk.LEFT, padx=5, pady=5)
+        btn_load_all = tk.Button(top_frame, text="Load All .spa Files from Folder",
+                                 command=self.load_all_files_from_folder, **btn_params)
+        btn_load_all.pack(side=tk.LEFT, padx=5)
 
-        btn_deriv1 = tk.Button(top_frame, text="1st Derivative", command=self.plot_derivative1)
-        btn_deriv1.pack(side=tk.LEFT, padx=5, pady=5)
+        btn_select_files = tk.Button(top_frame, text="Select Specific Files",
+                                     command=self.select_files, **btn_params)
+        btn_select_files.pack(side=tk.LEFT, padx=5)
 
-        btn_deriv2 = tk.Button(top_frame, text="2nd Derivative", command=self.plot_derivative2)
-        btn_deriv2.pack(side=tk.LEFT, padx=5, pady=5)
+        btn_plot = tk.Button(top_frame, text="Plot Spectra",
+                             command=self.plot_original, **btn_params)
+        btn_plot.pack(side=tk.LEFT, padx=5)
 
-        btn_home = tk.Button(top_frame, text="Reset", command=self.go_home)
-        btn_home.pack(side=tk.LEFT, padx=5, pady=5)
+        btn_deriv1 = tk.Button(top_frame, text="1st Derivative",
+                               command=self.plot_derivative1, **btn_params)
+        btn_deriv1.pack(side=tk.LEFT, padx=5)
 
-        # Split frame for table + plot
-        middle_frame = tk.Frame(self.root)
-        middle_frame.pack(fill=tk.BOTH, expand=True)
+        btn_deriv2 = tk.Button(top_frame, text="2nd Derivative",
+                               command=self.plot_derivative2, **btn_params)
+        btn_deriv2.pack(side=tk.LEFT, padx=5)
+
+        btn_home = tk.Button(top_frame, text="Reset",
+                             command=self.go_home, **btn_params)
+        btn_home.pack(side=tk.LEFT, padx=5)
+
+        # NEW: Toggle Legend button
+        btn_toggle_legend = tk.Button(
+            top_frame,
+            text="Toggle Legend",
+            command=self.toggle_legend,
+            **btn_params
+        )
+        btn_toggle_legend.pack(side=tk.LEFT, padx=5)
+
+        # Middle layout
+        middle_frame = tk.Frame(self.root, bg="#f7f2f2")
+        middle_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # Table frame
-        table_frame = tk.Frame(middle_frame)
+        table_frame = tk.Frame(middle_frame, bg="#f4e3e3", bd=2, relief=tk.GROOVE)
         table_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
-        tk.Label(table_frame, text="Loaded Files & Target Values").pack()
+        label = tk.Label(table_frame,
+                         text="Loaded Files & Target Values",
+                         bg="#800000",
+                         fg="white",
+                         font=("Segoe UI", 12, "bold"),
+                         pady=5)
+        label.pack(fill=tk.X)
 
         columns = ("Filename", "Value")
-        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=20)
+        self.tree = ttk.Treeview(table_frame,
+                                 columns=columns,
+                                 show="headings",
+                                 height=20)
         self.tree.heading("Filename", text="Filename")
         self.tree.heading("Value", text="Target Value")
 
         self.tree.column("Filename", width=200, anchor=tk.W)
         self.tree.column("Value", width=100, anchor=tk.CENTER)
 
-        self.tree.pack(fill=tk.Y)
+        self.tree.pack(fill=tk.Y, padx=5, pady=5)
 
         self.tree.bind('<Double-1>', self.on_double_click)
 
         # Plot frame
-        plot_frame = tk.Frame(middle_frame)
-        plot_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        plot_frame = tk.Frame(middle_frame, bg="#ffffff", bd=2, relief=tk.RIDGE)
+        plot_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         self.figure, self.ax = plt.subplots(figsize=(7, 5))
+        self.figure.patch.set_facecolor("#ffffff")
         self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
@@ -120,7 +186,6 @@ class SpectraViewerApp:
         self.load_files_from_paths(file_paths)
 
     def load_files_from_paths(self, file_paths):
-        # Reset previous data
         self.file_paths = list(file_paths)
         self.filenames = []
         self.spectra_data = []
@@ -186,9 +251,13 @@ class SpectraViewerApp:
     def prompt_for_value(self, current_val):
         popup = tk.Toplevel(self.root)
         popup.title("Edit Value")
+        popup.configure(bg="#f7f2f2")
 
-        tk.Label(popup, text="Enter new value:").pack(padx=10, pady=5)
-        entry = tk.Entry(popup)
+        tk.Label(popup,
+                 text="Enter new value:",
+                 font=("Segoe UI", 10),
+                 bg="#f7f2f2").pack(padx=10, pady=5)
+        entry = tk.Entry(popup, font=("Segoe UI", 10))
         entry.pack(padx=10, pady=5)
         entry.insert(0, str(current_val))
 
@@ -202,7 +271,14 @@ class SpectraViewerApp:
             except ValueError:
                 messagebox.showerror("Invalid input", "Please enter a numeric value.")
 
-        btn = tk.Button(popup, text="OK", command=confirm)
+        btn = tk.Button(popup,
+                        text="OK",
+                        bg="#006400",
+                        fg="white",
+                        activebackground="#228B22",
+                        font=("Segoe UI", 10, "bold"),
+                        relief=tk.FLAT,
+                        command=confirm)
         btn.pack(pady=5)
 
         popup.grab_set()
@@ -212,16 +288,19 @@ class SpectraViewerApp:
     def plot_original(self):
         if self.spectra_data is None:
             return
+        self.last_plot_type = "original"     # NEW
         self.plot_data(self.spectra_data, "(Original Spectra)")
 
     def plot_derivative1(self):
         if self.first_derivatives is None:
             return
+        self.last_plot_type = "deriv1"       # NEW
         self.plot_data(self.first_derivatives, "(1st Derivative)")
 
     def plot_derivative2(self):
         if self.second_derivatives is None:
             return
+        self.last_plot_type = "deriv2"       # NEW
         self.plot_data(self.second_derivatives, "(2nd Derivative)")
 
     def plot_data(self, data, title_suffix):
@@ -229,15 +308,30 @@ class SpectraViewerApp:
         for i, y in enumerate(data):
             self.ax.plot(self.wavenumbers, y, label=self.filenames[i])
 
-        self.ax.set_title(f"Spectra Viewer {title_suffix}")
-        self.ax.set_xlabel("Wavenumber (cm⁻¹)")
-        self.ax.set_ylabel("Absorbance / Intensity")
+        self.ax.set_facecolor("#ffffff")
+        self.ax.set_title(f"Spectra Viewer {title_suffix}", fontsize=14, color="#800000")
+        self.ax.set_xlabel("Wavenumber (cm⁻¹)", fontsize=12, color="#333333")
+        self.ax.set_ylabel("Absorbance / Intensity", fontsize=12, color="#333333")
         self.ax.invert_xaxis()
         self.ax.set_xlim(self.wavenumbers.max(), self.wavenumbers.min())
-        if len(self.filenames) <= 15:
+        if self.legend_visible and len(self.filenames) <= 15:
             self.ax.legend(fontsize='small')
-        self.ax.grid(True)
+        self.ax.grid(True, color="#cccccc")
         self.canvas.draw()
+
+    def toggle_legend(self):
+        self.legend_visible = not self.legend_visible
+        # Re-plot current data
+        if self.spectra_data is None:
+            return
+        if self.last_plot_type == "original":
+            self.plot_original()
+        elif self.last_plot_type == "deriv1":
+            self.plot_derivative1()
+        elif self.last_plot_type == "deriv2":
+            self.plot_derivative2()
+        else:
+            self.plot_original()
 
     def go_home(self):
         self.file_paths = []
@@ -250,6 +344,7 @@ class SpectraViewerApp:
         self.tree.delete(*self.tree.get_children())
         self.ax.clear()
         self.canvas.draw()
+        self.last_plot_type = None
 
 if __name__ == "__main__":
     root = tk.Tk()
