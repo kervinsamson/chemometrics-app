@@ -1,352 +1,513 @@
-#
-# plot_spectra_gui_styled_maroon_green.py
+# plot_spectra.py
 #
 # Description:
-# Spectra Viewer GUI with maroon header and dark green buttons.
-#
-# Author: Kervin Ralph A. Samson
-# Date: 06/26/2025
-#
+# A professional, multi-target chemometrics application inspired by TQ Analyst.
+# 
 
+import sys
 import os
-import numpy as np
+import glob
 import spectrochempy as spc
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
+from scipy.signal import savgol_filter
 
-class SpectraViewerApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Spectra Viewer")
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.cross_decomposition import PLSRegression
+from sklearn.metrics import mean_squared_error, r2_score
 
-        # Window background
-        self.root.configure(bg="#f7f2f2")
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
+    QSplitter, QGridLayout, QLabel, QHeaderView, QMessageBox,
+    QSpinBox, QTabWidget, QComboBox
+)
+from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 
-        # Data initialization
-        self.file_paths = []
-        self.filenames = []
-        self.spectra_data = None
-        self.first_derivatives = None
-        self.second_derivatives = None
-        self.wavenumbers = None
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 
-        self.user_values = {}
+# --- UP Visual Identity Color Palette (unchanged) ---
+UP_MAROON, UP_FOREST_GREEN, UP_GOLD = "#8A1538", "#134633", "#FFB81C"
+UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY, UP_MEDIUM_GRAY = "#FFFFFF", "#F0F0F0", "#333333", "#C0C0C0"
 
-        self.legend_visible = True          # NEW: Legend toggle flag
-        self.last_plot_type = None          # NEW: track last plotted type
+class SpectraViewer(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Interactive Chemometrics App - UPLB-IPB")
+        self.setGeometry(100, 100, 1600, 900)
 
-        self.create_styles()
-        self.create_widgets()
+        self.spectra_data = {}
+        self.chemical_components = []
+        self.pls_models = {}
+        self.current_derivative = 0
+        self.legend_visible = True
 
-    def create_styles(self):
-        style = ttk.Style()
-        style.theme_use("clam")
+        self.tabs = QTabWidget()
+        self.setCentralWidget(self.tabs)
+        self.calibration_tab = self._create_calibration_tab()
+        self.components_tab = self._create_components_tab()
+        self.tabs.addTab(self.calibration_tab, "Calibration")
+        self.tabs.addTab(self.components_tab, "Components")
 
-        # Treeview styling
-        style.configure("Treeview",
-                        background="#ffffff",
-                        foreground="#333333",
-                        rowheight=25,
-                        fieldbackground="#ffffff",
-                        font=("Segoe UI", 10))
-        style.configure("Treeview.Heading",
-                        background="#800000",
-                        foreground="white",
-                        font=("Segoe UI", 11, "bold"))
-        style.map("Treeview",
-                  background=[("selected", "#c1e0c1")],
-                  foreground=[("selected", "black")])
+    def _create_components_tab(self):
+        container = QWidget()
+        layout = QVBoxLayout(container); layout.setContentsMargins(20, 20, 20, 20)
+        title = QLabel("Define Chemical Components"); title.setObjectName("TabTitle")
+        self.components_table = QTableWidget()
+        self.components_table.setColumnCount(3); self.components_table.setHorizontalHeaderLabels(["Component Name", "Abbreviation", "Unit"])
+        self.components_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        btn_layout = QHBoxLayout()
+        self.btn_add_component = QPushButton("Add New Component")
+        self.btn_remove_component = QPushButton("Remove Selected Component")
+        btn_layout.addWidget(self.btn_add_component); btn_layout.addWidget(self.btn_remove_component)
+        btn_layout.addStretch()
+        layout.addWidget(title); layout.addWidget(self.components_table); layout.addLayout(btn_layout); layout.addStretch()
+        self.btn_add_component.clicked.connect(self.add_component)
+        self.btn_remove_component.clicked.connect(self.remove_component)
+        self.components_table.itemChanged.connect(self.update_component_value)
+        return container
 
-    def create_widgets(self):
-        # Header bar
-        header = tk.Label(self.root,
-                          text="Spectra Viewer",
-                          bg="#800000",
-                          fg="white",
-                          font=("Segoe UI", 18, "bold"),
-                          pady=10)
-        header.pack(fill=tk.X)
+    def _create_calibration_tab(self):
+        main_widget = QWidget()
+        main_splitter = QSplitter(Qt.Horizontal, main_widget)
+        main_layout = QHBoxLayout(main_widget)
+        main_layout.addWidget(main_splitter)
+        main_layout.setContentsMargins(0,0,0,0)
 
-        # Top frame
-        top_frame = tk.Frame(self.root, bg="#f7f2f2")
-        top_frame.pack(side=tk.TOP, fill=tk.X, pady=10)
+        ### --- FIX: Revert to a single containing widget for the entire left panel --- ###
+        left_panel = QWidget()
+        left_panel.setObjectName("ControlPanel") # This single widget gets the maroon background
+        lp_layout = QVBoxLayout(left_panel) # All left-side content goes in this layout
+        lp_layout.setContentsMargins(15, 15, 15, 15); lp_layout.setSpacing(10)
+        
+        # --- Workflow & Training Controls ---
+        train_layout = QGridLayout(); train_layout.setSpacing(8)
+        self.btn_load_folder = QPushButton("1. Load .spa Files")
+        
+        # ### FIX: All labels on the maroon panel should use PerfLabel (white text) ###
+        lbl_step2 = QLabel("2. Enter Reference Values in Table"); lbl_step2.setObjectName("PerfLabel")
+        lbl_step3 = QLabel("3. Select Component to Model:"); lbl_step3.setObjectName("PerfLabel")
+        self.component_selector_combo = QComboBox(); self.component_selector_combo.setObjectName("ComboBox")
+        lbl_step4 = QLabel("4. Set PLS Components:"); lbl_step4.setObjectName("PerfLabel")
+        self.pls_components_spinbox = QSpinBox()
+        self.pls_components_spinbox.setMinimum(1); self.pls_components_spinbox.setMaximum(50); self.pls_components_spinbox.setValue(10)
+        self.pls_components_spinbox.setObjectName("SpinBox")
+        self.btn_train_pls = QPushButton("5. Train PLS Model")
 
-        btn_params = {
-            "bg": "#006400",
-            "fg": "white",
-            "activebackground": "#228B22",
-            "activeforeground": "white",
-            "font": ("Segoe UI", 10, "bold"),
-            "bd": 0,
-            "padx": 10,
-            "pady": 5,
-            "relief": tk.FLAT,
-        }
+        train_layout.addWidget(self.btn_load_folder, 0, 0, 1, 2)
+        train_layout.addWidget(lbl_step2, 1, 0, 1, 2)
+        train_layout.addWidget(lbl_step3, 2, 0, 1, 2)
+        train_layout.addWidget(self.component_selector_combo, 3, 0, 1, 2)
+        train_layout.addWidget(lbl_step4, 4, 0)
+        train_layout.addWidget(self.pls_components_spinbox, 4, 1)
+        train_layout.addWidget(self.btn_train_pls, 5, 0, 1, 2)
 
-        btn_load_all = tk.Button(top_frame, text="Load All .spa Files from Folder",
-                                 command=self.load_all_files_from_folder, **btn_params)
-        btn_load_all.pack(side=tk.LEFT, padx=5)
+        # --- Data Table ---
+        table_header_label = QLabel("Calibration Data"); table_header_label.setObjectName("PanelHeaderLabel")
+        self.data_table = QTableWidget()
+        self.data_table.itemChanged.connect(self.update_reference_value)
 
-        btn_select_files = tk.Button(top_frame, text="Select Specific Files",
-                                     command=self.select_files, **btn_params)
-        btn_select_files.pack(side=tk.LEFT, padx=5)
+        # --- Model Performance ---
+        perf_label = QLabel("Model Performance"); perf_label.setObjectName("PanelHeaderLabel")
+        perf_layout = QGridLayout()
+        self.lbl_r2, self.lbl_rmse = QLabel("R² (Test): N/A"), QLabel("RMSE (Test): N/A")
+        self.lbl_r2.setObjectName("PerfLabel"); self.lbl_rmse.setObjectName("PerfLabel")
+        perf_layout.addWidget(self.lbl_r2, 0, 0); perf_layout.addWidget(self.lbl_rmse, 0, 1)
+        
+        # --- Assemble Left Panel Layout Correctly ---
+        lp_layout.addLayout(train_layout)
+        lp_layout.addWidget(table_header_label)
+        lp_layout.addWidget(self.data_table) # The table will be stretched
+        lp_layout.addWidget(perf_label)
+        lp_layout.addLayout(perf_layout)
 
-        btn_plot = tk.Button(top_frame, text="Plot Spectra",
-                             command=self.plot_original, **btn_params)
-        btn_plot.pack(side=tk.LEFT, padx=5)
+        self.btn_load_folder.clicked.connect(self.load_folder)
+        self.btn_train_pls.clicked.connect(self.train_pls_model)
+        
+        # Right panel for the plot
+        right_panel = self._create_plot_panel()
 
-        btn_deriv1 = tk.Button(top_frame, text="1st Derivative",
-                               command=self.plot_derivative1, **btn_params)
-        btn_deriv1.pack(side=tk.LEFT, padx=5)
+        main_splitter.addWidget(left_panel)
+        main_splitter.addWidget(right_panel)
+        main_splitter.setStretchFactor(0, 1)
+        main_splitter.setStretchFactor(1, 2)
+        return main_widget
 
-        btn_deriv2 = tk.Button(top_frame, text="2nd Derivative",
-                               command=self.plot_derivative2, **btn_params)
-        btn_deriv2.pack(side=tk.LEFT, padx=5)
+    def _create_plot_panel(self):
+        container, layout = QWidget(), QVBoxLayout()
+        self.fig = Figure(figsize=(10, 7), dpi=100, facecolor=UP_LIGHT_GRAY)
+        self.canvas = FigureCanvas(self.fig)
+        self.ax = self.fig.add_subplot(111)
+        self.btn_plot = QPushButton("Plot Spectra"); self.btn_reset = QPushButton("Reset Plot")
+        self.btn_deriv1 = QPushButton("1st Derivative"); self.btn_deriv2 = QPushButton("2nd Derivative")
+        plot_btn_layout = QHBoxLayout()
+        plot_btn_layout.addWidget(self.btn_plot); plot_btn_layout.addWidget(self.btn_reset)
+        plot_btn_layout.addWidget(self.btn_deriv1); plot_btn_layout.addWidget(self.btn_deriv2)
+        self.btn_plot.clicked.connect(self.plot_spectra); self.btn_reset.clicked.connect(self.reset_plot)
+        self.btn_deriv1.clicked.connect(lambda: self.apply_derivative(1)); self.btn_deriv2.clicked.connect(lambda: self.apply_derivative(2))
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        self._style_matplotlib_toolbar()
+        layout.addLayout(plot_btn_layout); layout.addWidget(self.toolbar); layout.addWidget(self.canvas)
+        container.setLayout(layout)
+        self.reset_plot()
+        return container
 
-        btn_home = tk.Button(top_frame, text="Reset",
-                             command=self.go_home, **btn_params)
-        btn_home.pack(side=tk.LEFT, padx=5)
+    @Slot(QTableWidgetItem)
+    def update_component_value(self, item):
+        row, col = item.row(), item.column()
+        if row >= len(self.chemical_components): return
 
-        # NEW: Toggle Legend button
-        btn_toggle_legend = tk.Button(
-            top_frame,
-            text="Toggle Legend",
-            command=self.toggle_legend,
-            **btn_params
-        )
-        btn_toggle_legend.pack(side=tk.LEFT, padx=5)
+        new_value = item.text()
+        comp_dict = self.chemical_components[row]
+        
+        # Determine which field to update
+        if col == 0: # Name
+            old_name = comp_dict.get('name')
+            if old_name == new_value: return
+            comp_dict['name'] = new_value
+            # Propagate name change to other data structures
+            if old_name in self.pls_models:
+                self.pls_models[new_value] = self.pls_models.pop(old_name)
+            for spec_data in self.spectra_data.values():
+                if old_name in spec_data['refs']:
+                    spec_data['refs'][new_value] = spec_data['refs'].pop(old_name)
+            self._update_all_dynamic_widgets() # Refresh dependent widgets
+        elif col == 1: # Abbreviation
+            comp_dict['abbrev'] = new_value
+        elif col == 2: # Unit
+            comp_dict['unit'] = new_value
 
-        # Middle layout
-        middle_frame = tk.Frame(self.root, bg="#f7f2f2")
-        middle_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    def _create_components_tab(self):
+        container = QWidget()
+        layout = QVBoxLayout(container); layout.setContentsMargins(20, 20, 20, 20)
+        title = QLabel("Define Chemical Components"); title.setObjectName("TabTitle")
+        self.components_table = QTableWidget()
+        self.components_table.setColumnCount(3); self.components_table.setHorizontalHeaderLabels(["Component Name", "Abbreviation", "Unit"])
+        self.components_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        btn_layout = QHBoxLayout()
+        self.btn_add_component = QPushButton("Add New Component")
+        self.btn_remove_component = QPushButton("Remove Selected Component")
+        btn_layout.addWidget(self.btn_add_component); btn_layout.addWidget(self.btn_remove_component)
+        btn_layout.addStretch()
+        layout.addWidget(title); layout.addWidget(self.components_table); layout.addLayout(btn_layout); layout.addStretch()
+        self.btn_add_component.clicked.connect(self.add_component)
+        self.btn_remove_component.clicked.connect(self.remove_component)
+        self.components_table.itemChanged.connect(self.update_component_value)
+        return container
 
-        # Table frame
-        table_frame = tk.Frame(middle_frame, bg="#f4e3e3", bd=2, relief=tk.GROOVE)
-        table_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+    def _create_calibration_tab(self):
+        main_widget = QWidget()
+        main_splitter = QSplitter(Qt.Horizontal, main_widget)
+        main_layout = QHBoxLayout(main_widget)
+        main_layout.addWidget(main_splitter)
+        main_layout.setContentsMargins(0,0,0,0)
 
-        label = tk.Label(table_frame,
-                         text="Loaded Files & Target Values",
-                         bg="#800000",
-                         fg="white",
-                         font=("Segoe UI", 12, "bold"),
-                         pady=5)
-        label.pack(fill=tk.X)
+        ### --- FIX: Revert to a single containing widget for the entire left panel --- ###
+        left_panel = QWidget()
+        left_panel.setObjectName("ControlPanel") # This single widget gets the maroon background
+        lp_layout = QVBoxLayout(left_panel) # All left-side content goes in this layout
+        lp_layout.setContentsMargins(15, 15, 15, 15); lp_layout.setSpacing(10)
+        
+        # --- Workflow & Training Controls ---
+        train_layout = QGridLayout(); train_layout.setSpacing(8)
+        self.btn_load_folder = QPushButton("1. Load .spa Files")
+        
+        # ### FIX: All labels on the maroon panel should use PerfLabel (white text) ###
+        lbl_step2 = QLabel("2. Enter Reference Values in Table"); lbl_step2.setObjectName("PerfLabel")
+        lbl_step3 = QLabel("3. Select Component to Model:"); lbl_step3.setObjectName("PerfLabel")
+        self.component_selector_combo = QComboBox(); self.component_selector_combo.setObjectName("ComboBox")
+        lbl_step4 = QLabel("4. Set PLS Components:"); lbl_step4.setObjectName("PerfLabel")
+        self.pls_components_spinbox = QSpinBox()
+        self.pls_components_spinbox.setMinimum(1); self.pls_components_spinbox.setMaximum(50); self.pls_components_spinbox.setValue(10)
+        self.pls_components_spinbox.setObjectName("SpinBox")
+        self.btn_train_pls = QPushButton("5. Train PLS Model")
 
-        columns = ("Filename", "Value")
-        self.tree = ttk.Treeview(table_frame,
-                                 columns=columns,
-                                 show="headings",
-                                 height=20)
-        self.tree.heading("Filename", text="Filename")
-        self.tree.heading("Value", text="Target Value")
+        train_layout.addWidget(self.btn_load_folder, 0, 0, 1, 2)
+        train_layout.addWidget(lbl_step2, 1, 0, 1, 2)
+        train_layout.addWidget(lbl_step3, 2, 0, 1, 2)
+        train_layout.addWidget(self.component_selector_combo, 3, 0, 1, 2)
+        train_layout.addWidget(lbl_step4, 4, 0)
+        train_layout.addWidget(self.pls_components_spinbox, 4, 1)
+        train_layout.addWidget(self.btn_train_pls, 5, 0, 1, 2)
 
-        self.tree.column("Filename", width=200, anchor=tk.W)
-        self.tree.column("Value", width=100, anchor=tk.CENTER)
+        # --- Data Table ---
+        table_header_label = QLabel("Calibration Data"); table_header_label.setObjectName("PanelHeaderLabel")
+        self.data_table = QTableWidget()
+        self.data_table.itemChanged.connect(self.update_reference_value)
 
-        self.tree.pack(fill=tk.Y, padx=5, pady=5)
+        # --- Model Performance ---
+        perf_label = QLabel("Model Performance"); perf_label.setObjectName("PanelHeaderLabel")
+        perf_layout = QGridLayout()
+        self.lbl_r2, self.lbl_rmse = QLabel("R² (Test): N/A"), QLabel("RMSE (Test): N/A")
+        self.lbl_r2.setObjectName("PerfLabel"); self.lbl_rmse.setObjectName("PerfLabel")
+        perf_layout.addWidget(self.lbl_r2, 0, 0); perf_layout.addWidget(self.lbl_rmse, 0, 1)
+        
+        # --- Assemble Left Panel Layout Correctly ---
+        lp_layout.addLayout(train_layout)
+        lp_layout.addWidget(table_header_label)
+        lp_layout.addWidget(self.data_table) # The table will be stretched
+        lp_layout.addWidget(perf_label)
+        lp_layout.addLayout(perf_layout)
 
-        self.tree.bind('<Double-1>', self.on_double_click)
+        self.btn_load_folder.clicked.connect(self.load_folder)
+        self.btn_train_pls.clicked.connect(self.train_pls_model)
+        
+        # Right panel for the plot
+        right_panel = self._create_plot_panel()
 
-        # Plot frame
-        plot_frame = tk.Frame(middle_frame, bg="#ffffff", bd=2, relief=tk.RIDGE)
-        plot_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        main_splitter.addWidget(left_panel)
+        main_splitter.addWidget(right_panel)
+        main_splitter.setStretchFactor(0, 1)
+        main_splitter.setStretchFactor(1, 2)
+        return main_widget
 
-        self.figure, self.ax = plt.subplots(figsize=(7, 5))
-        self.figure.patch.set_facecolor("#ffffff")
-        self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+    def _create_plot_panel(self):
+        container, layout = QWidget(), QVBoxLayout()
+        self.fig = Figure(figsize=(10, 7), dpi=100, facecolor=UP_LIGHT_GRAY)
+        self.canvas = FigureCanvas(self.fig)
+        self.ax = self.fig.add_subplot(111)
+        self.btn_plot = QPushButton("Plot Spectra"); self.btn_reset = QPushButton("Reset Plot")
+        self.btn_deriv1 = QPushButton("1st Derivative"); self.btn_deriv2 = QPushButton("2nd Derivative")
+        plot_btn_layout = QHBoxLayout()
+        plot_btn_layout.addWidget(self.btn_plot); plot_btn_layout.addWidget(self.btn_reset)
+        plot_btn_layout.addWidget(self.btn_deriv1); plot_btn_layout.addWidget(self.btn_deriv2)
+        self.btn_plot.clicked.connect(self.plot_spectra); self.btn_reset.clicked.connect(self.reset_plot)
+        self.btn_deriv1.clicked.connect(lambda: self.apply_derivative(1)); self.btn_deriv2.clicked.connect(lambda: self.apply_derivative(2))
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        self._style_matplotlib_toolbar()
+        layout.addLayout(plot_btn_layout); layout.addWidget(self.toolbar); layout.addWidget(self.canvas)
+        container.setLayout(layout)
+        self.reset_plot()
+        return container
 
-    def load_all_files_from_folder(self):
-        folder_path = filedialog.askdirectory(title="Select folder containing .spa files")
-        if not folder_path:
-            return
+    # --- All other backend functions remain identical ---
+    @Slot()
+    def add_component(self):
+        row_count = self.components_table.rowCount(); self.components_table.insertRow(row_count)
+        new_comp_name = f"NewComponent{row_count+1}"
+        self.chemical_components.append({'name': new_comp_name, 'abbrev': '', 'unit': ''})
+        
+        # Block signals to prevent itemChanged from firing during programmatic setup
+        self.components_table.blockSignals(True)
+        self.components_table.setItem(row_count, 0, QTableWidgetItem(new_comp_name))
+        self.components_table.setItem(row_count, 1, QTableWidgetItem(""))
+        self.components_table.setItem(row_count, 2, QTableWidgetItem(""))
+        self.components_table.blockSignals(False)
 
-        file_paths = [
-            os.path.join(folder_path, f)
-            for f in os.listdir(folder_path)
-            if f.lower().endswith(".spa")
-        ]
-
-        if not file_paths:
-            messagebox.showerror("No Files", "No .spa files found in the selected folder.")
-            return
-
-        self.load_files_from_paths(file_paths)
-
-    def select_files(self):
-        file_paths = filedialog.askopenfilenames(
-            title="Select one or more .spa files",
-            filetypes=[("Spectra files", "*.spa")]
-        )
-        if not file_paths:
-            return
-
-        self.load_files_from_paths(file_paths)
-
-    def load_files_from_paths(self, file_paths):
-        self.file_paths = list(file_paths)
-        self.filenames = []
-        self.spectra_data = []
-        self.wavenumbers = None
-        self.user_values = {}
-
-        for path in self.file_paths:
+        self._update_all_dynamic_widgets()
+    @Slot()
+    def remove_component(self):
+        current_row = self.components_table.currentRow()
+        if current_row < 0: QMessageBox.warning(self, "Warning", "Please select a component to remove."); return
+        comp_name_to_remove = self.chemical_components[current_row]['name']; del self.chemical_components[current_row]
+        if comp_name_to_remove in self.pls_models: del self.pls_models[comp_name_to_remove]
+        for spec_data in self.spectra_data.values():
+            if comp_name_to_remove in spec_data['refs']: del spec_data['refs'][comp_name_to_remove]
+        self.components_table.removeRow(current_row); self._update_all_dynamic_widgets()
+    def _update_all_dynamic_widgets(self):
+        self.components_table.blockSignals(True)
+        self.components_table.setRowCount(len(self.chemical_components))
+        for i, comp in enumerate(self.chemical_components):
+            self.components_table.setItem(i, 0, QTableWidgetItem(comp['name']))
+            self.components_table.setItem(i, 1, QTableWidgetItem(comp.get('abbrev', '')))
+            self.components_table.setItem(i, 2, QTableWidgetItem(comp.get('unit', '')))
+        self.components_table.blockSignals(False)
+        self._update_data_table_columns()
+        self.component_selector_combo.clear()
+        self.component_selector_combo.addItems([comp['name'] for comp in self.chemical_components])
+    def _update_data_table_columns(self):
+        headers = ["Filename"] + [comp['name'] for comp in self.chemical_components]
+        self.data_table.setColumnCount(len(headers))
+        self.data_table.setHorizontalHeaderLabels(headers)
+        self.data_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self._populate_data_table_rows()
+    def _populate_data_table_rows(self):
+        self.data_table.blockSignals(True)
+        self.data_table.setRowCount(len(self.spectra_data))
+        sorted_filenames = sorted(self.spectra_data.keys())
+        for i, filename in enumerate(sorted_filenames):
+            item_filename = QTableWidgetItem(filename); item_filename.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+            self.data_table.setItem(i, 0, item_filename)
+            for j, comp in enumerate(self.chemical_components):
+                ref_value = self.spectra_data[filename]['refs'].get(comp['name'])
+                val_str = f"{ref_value:.4f}" if ref_value is not None else ""
+                self.data_table.setItem(i, j + 1, QTableWidgetItem(val_str))
+        self.data_table.blockSignals(False)
+    @Slot(QTableWidgetItem)
+    def update_reference_value(self, item):
+        col_idx = item.column()
+        if col_idx == 0: return
+        row_idx = item.row(); filename = self.data_table.item(row_idx, 0).text()
+        comp_name = self.chemical_components[col_idx - 1]['name']
+        try:
+            value_str = item.text().strip()
+            new_value = float(value_str) if value_str else None
+            self.spectra_data[filename]['refs'][comp_name] = new_value
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", "Please enter a valid number.")
+            old_value = self.spectra_data[filename]['refs'].get(comp_name)
+            item.setText(f"{old_value:.4f}" if old_value is not None else "")
+    def load_folder(self):
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder Containing .spa Files")
+        if not folder_path: return
+        self.spectra_data.clear()
+        for file_path in glob.glob(os.path.join(glob.escape(folder_path), '*.spa')):
+            filename = os.path.basename(file_path)
             try:
-                nd = spc.read_spa(path)
-                intensity = nd.data.squeeze()
-
-                if self.wavenumbers is None:
-                    self.wavenumbers = nd.x.data
-
-                if intensity.shape != nd.x.data.shape:
-                    print(f"Skipping {os.path.basename(path)} due to shape mismatch.")
-                    continue
-
-                self.spectra_data.append(intensity)
-                self.filenames.append(os.path.basename(path))
-                self.user_values[os.path.basename(path)] = 0.0
-
-            except Exception as e:
-                print(f"Error reading {path}: {e}")
-
-        if not self.spectra_data:
-            messagebox.showerror("Error", "No valid spectra loaded.")
-            return
-
-        self.spectra_data = np.vstack(self.spectra_data)
-        self.first_derivatives = np.gradient(self.spectra_data, axis=1)
-        self.second_derivatives = np.gradient(self.first_derivatives, axis=1)
-
-        self.populate_table()
-        self.plot_original()
-
-    def populate_table(self):
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-
-        for filename in self.filenames:
-            val = self.user_values.get(filename, 0.0)
-            self.tree.insert("", tk.END, values=(filename, val))
-
-    def on_double_click(self, event):
-        region = self.tree.identify("region", event.x, event.y)
-        if region != "cell":
-            return
-
-        column = self.tree.identify_column(event.x)
-        row = self.tree.identify_row(event.y)
-
-        if column == "#2":
-            item = self.tree.item(row)
-            current_val = item["values"][1]
-            filename = item["values"][0]
-
-            new_val = self.prompt_for_value(current_val)
-            if new_val is not None:
-                self.tree.set(row, "Value", new_val)
-                self.user_values[filename] = float(new_val)
-
-    def prompt_for_value(self, current_val):
-        popup = tk.Toplevel(self.root)
-        popup.title("Edit Value")
-        popup.configure(bg="#f7f2f2")
-
-        tk.Label(popup,
-                 text="Enter new value:",
-                 font=("Segoe UI", 10),
-                 bg="#f7f2f2").pack(padx=10, pady=5)
-        entry = tk.Entry(popup, font=("Segoe UI", 10))
-        entry.pack(padx=10, pady=5)
-        entry.insert(0, str(current_val))
-
-        val = None
-
-        def confirm():
-            nonlocal val
-            try:
-                val = float(entry.get())
-                popup.destroy()
-            except ValueError:
-                messagebox.showerror("Invalid input", "Please enter a numeric value.")
-
-        btn = tk.Button(popup,
-                        text="OK",
-                        bg="#006400",
-                        fg="white",
-                        activebackground="#228B22",
-                        font=("Segoe UI", 10, "bold"),
-                        relief=tk.FLAT,
-                        command=confirm)
-        btn.pack(pady=5)
-
-        popup.grab_set()
-        self.root.wait_window(popup)
-        return val
-
-    def plot_original(self):
-        if self.spectra_data is None:
-            return
-        self.last_plot_type = "original"     # NEW
-        self.plot_data(self.spectra_data, "(Original Spectra)")
-
-    def plot_derivative1(self):
-        if self.first_derivatives is None:
-            return
-        self.last_plot_type = "deriv1"       # NEW
-        self.plot_data(self.first_derivatives, "(1st Derivative)")
-
-    def plot_derivative2(self):
-        if self.second_derivatives is None:
-            return
-        self.last_plot_type = "deriv2"       # NEW
-        self.plot_data(self.second_derivatives, "(2nd Derivative)")
-
-    def plot_data(self, data, title_suffix):
+                nd = spc.read_spa(file_path)
+                self.spectra_data[filename] = {'nd': nd, 'intensity': nd.data.squeeze(), 'refs': {}}
+            except Exception as e: print(f"Error loading {filename}: {e}")
+        self._update_data_table_columns(); self.reset_plot()
+        QMessageBox.information(self, "Success", f"Loaded {len(self.spectra_data)} spectra.")
+    def train_pls_model(self):
+        target_component = self.component_selector_combo.currentText()
+        if not target_component: QMessageBox.warning(self, "Warning", "Please define and select a component to model."); return
+        X_list, y_list = [], []
+        for filename, data in self.spectra_data.items():
+            ref_val = data['refs'].get(target_component)
+            if ref_val is not None: X_list.append(self._get_processed_intensity(data['intensity'])); y_list.append(ref_val)
+        if len(X_list) < 5: QMessageBox.warning(self, "Not Enough Data", f"Need at least 5 reference values for '{target_component}' to train a model."); return
+        X, y = np.array(X_list), np.array(y_list)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+        scaler = StandardScaler(); X_train_scaled, X_test_scaled = scaler.fit_transform(X_train), scaler.transform(X_test)
+        num_components = self.pls_components_spinbox.value()
+        model = PLSRegression(n_components=num_components); model.fit(X_train_scaled, y_train)
+        self.pls_models[target_component] = {'model': model, 'scaler': scaler}
+        y_pred = model.predict(X_test_scaled)
+        r2, rmse = r2_score(y_test, y_pred), np.sqrt(mean_squared_error(y_test, y_pred))
+        self.lbl_r2.setText(f"R² ({target_component}): {r2:.4f}"); self.lbl_rmse.setText(f"RMSE ({target_component}): {rmse:.4f}")
+        QMessageBox.information(self, "Training Complete", f"Model for '{target_component}' has been trained.")
+    def _style_matplotlib_toolbar(self):
+        icon_color = QColor(UP_DARK_GRAY)
+        for action in self.toolbar.actions():
+            if action.icon() and not action.icon().isNull():
+                pixmap = action.icon().pixmap(32, 32); painter = QPainter(pixmap)
+                painter.setCompositionMode(QPainter.CompositionMode_SourceIn); painter.fillRect(pixmap.rect(), icon_color); painter.end()
+                action.setIcon(QIcon(pixmap))
+    def _get_processed_intensity(self, original_intensity):
+        if self.current_derivative == 0: return original_intensity
+        window_length, polyorder = 11, 2
+        if self.current_derivative == 1: return savgol_filter(original_intensity, window_length, polyorder, deriv=1)
+        elif self.current_derivative == 2: return savgol_filter(original_intensity, window_length, polyorder, deriv=2)
+        return original_intensity
+    def apply_derivative(self, deriv_order): self.current_derivative = deriv_order; self.plot_spectra()
+    def plot_spectra(self):
         self.ax.clear()
-        for i, y in enumerate(data):
-            self.ax.plot(self.wavenumbers, y, label=self.filenames[i])
+        if not self.spectra_data: self.ax.text(0.5, 0.5, 'No data loaded', ha='center'); self.canvas.draw(); return
+        for filename, data in self.spectra_data.items(): self.ax.plot(data['nd'].x.data, self._get_processed_intensity(data['intensity']), label=filename)
+        if self.current_derivative == 0: title = "Original Spectra"
+        elif self.current_derivative == 1: title = "1st Derivative"
+        else: title = "2nd Derivative"
+        self.ax.set_title(f"Spectra Viewer: {title}", fontsize=16, color=UP_MAROON, weight='bold')
+        self.ax.set_xlabel('Wavenumber (cm⁻¹)'); self.ax.set_ylabel('Absorbance / Intensity'); self.ax.invert_xaxis(); self.ax.set_facecolor(UP_WHITE)
+        self.ax.grid(True, linestyle='--', color=UP_DARK_GRAY, alpha=0.3); self.ax.tick_params(colors=UP_DARK_GRAY);
+        for spine in self.ax.spines.values(): spine.set_edgecolor(UP_DARK_GRAY)
+        if len(self.spectra_data) <= 20: self.ax.legend(fontsize='small')
+        self.fig.tight_layout(); self.canvas.draw()
+    def reset_plot(self): self.current_derivative = 0; self.plot_spectra()
+    def toggle_legend(self): self.legend_visible = not self.legend_visible; self.plot_spectra()
 
-        self.ax.set_facecolor("#ffffff")
-        self.ax.set_title(f"Spectra Viewer {title_suffix}", fontsize=14, color="#800000")
-        self.ax.set_xlabel("Wavenumber (cm⁻¹)", fontsize=12, color="#333333")
-        self.ax.set_ylabel("Absorbance / Intensity", fontsize=12, color="#333333")
-        self.ax.invert_xaxis()
-        self.ax.set_xlim(self.wavenumbers.max(), self.wavenumbers.min())
-        if self.legend_visible and len(self.filenames) <= 15:
-            self.ax.legend(fontsize='small')
-        self.ax.grid(True, color="#cccccc")
-        self.canvas.draw()
-
-    def toggle_legend(self):
-        self.legend_visible = not self.legend_visible
-        # Re-plot current data
-        if self.spectra_data is None:
-            return
-        if self.last_plot_type == "original":
-            self.plot_original()
-        elif self.last_plot_type == "deriv1":
-            self.plot_derivative1()
-        elif self.last_plot_type == "deriv2":
-            self.plot_derivative2()
-        else:
-            self.plot_original()
-
-    def go_home(self):
-        self.file_paths = []
-        self.filenames = []
-        self.spectra_data = None
-        self.first_derivatives = None
-        self.second_derivatives = None
-        self.wavenumbers = None
-        self.user_values = {}
-        self.tree.delete(*self.tree.get_children())
-        self.ax.clear()
-        self.canvas.draw()
-        self.last_plot_type = None
-
+# --- Main execution block ---
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = SpectraViewerApp(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    
+    # --- FINAL, SIMPLIFIED, AND CORRECTED STYLESHEET ---
+    stylesheet = f"""
+        /* --- General and Tab Styling --- */
+        QMainWindow, QWidget {{ background-color: {UP_LIGHT_GRAY}; font-family: Segoe UI, Arial, sans-serif; }}
+        QTabWidget::pane {{ border: none; }}
+        QTabBar::tab {{
+            background: {UP_MEDIUM_GRAY}; color: {UP_DARK_GRAY}; padding: 10px;
+            font-weight: bold; border-top-left-radius: 5px; border-top-right-radius: 5px;
+            min-width: 100px; margin-right: 2px;
+        }}
+        QTabBar::tab:selected {{
+            background: {UP_FOREST_GREEN}; color: {UP_WHITE}; border-bottom: 3px solid {UP_GOLD};
+        }}
+        #TabTitle {{ font-size: 14pt; color: {UP_DARK_GRAY}; font-weight: bold; padding-bottom: 10px; }}
+
+        /* --- Panel Styling --- */
+        #ControlPanel {{ background-color: {UP_MAROON}; border-radius: 5px; }}
+        #ControlPanel QLabel {{ color: {UP_WHITE}; }}
+        #PanelHeaderLabel {{
+            background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; font-size: 10pt; font-weight: bold;
+            padding: 8px; border-radius: 5px; qproperty-alignment: 'AlignCenter';
+        }}
+        
+        /* --- Widget Styling --- */
+        QPushButton {{
+            background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; font-size: 10pt; font-weight: bold;
+            border: 1px solid {UP_GOLD}; border-radius: 5px; padding: 8px;
+        }}
+        QPushButton:hover {{ background-color: #1A5C40; }}
+        QPushButton:pressed {{ background-color: #0E3827; }}
+        #PerfLabel {{ color: {UP_WHITE}; font-size: 10pt; font-weight: bold; background-color: transparent; }}
+        
+        /* --- Table Styling --- */
+        QTableWidget {{ background-color: {UP_WHITE}; color: {UP_DARK_GRAY}; border: none; gridline-color: {UP_LIGHT_GRAY}; }}
+        QTableWidget::item:selected {{ background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; }}
+        QHeaderView::section {{
+            background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; padding: 5px;
+            font-size: 10pt; font-weight: bold; border: none;
+        }}
+        
+        /* --- FINAL CORRECTED SPINBOX AND COMBOBOX STYLING --- */
+        QSpinBox, QComboBox {{
+            background-color: {UP_WHITE};
+            color: {UP_DARK_GRAY};
+            border: 2px solid {UP_GOLD};
+            border-radius: 5px;
+            padding: 5px;
+            font-weight: bold;
+            min-height: 24px;
+        }}
+
+        QComboBox::drop-down {{ border: none; }}
+
+        /* --- THE FIX IS HERE: SIMPLIFIED BUTTON STYLING --- */
+        
+        /* General properties for both buttons */
+        QSpinBox::up-button, QSpinBox::down-button {{
+            subcontrol-origin: border;
+            background-color: {UP_MEDIUM_GRAY};
+            width: 18px;
+            border-left: 1px solid {UP_GOLD};
+        }}
+        
+        /* Hover state for both buttons */
+        QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+            background-color: {UP_FOREST_GREEN};
+        }}
+
+        /* Position the up button at the top right */
+        QSpinBox::up-button {{
+            subcontrol-position: top right;
+            border-top-right-radius: 3px;
+        }}
+
+        /* Position the down button at the bottom right */
+        QSpinBox::down-button {{
+            subcontrol-position: bottom right;
+            border-bottom-right-radius: 3px;
+        }}
+        
+        /*
+        * BY NOT SPECIFYING a style for 'QSpinBox::up-arrow' or 'QSpinBox::down-arrow',
+        * we let Qt draw its default system arrow, which is visible.
+        * This is the simplest and most robust solution.
+        */
+        
+        /* --- Other --- */
+        QSplitter::handle {{ background-color: {UP_LIGHT_GRAY}; }}
+        QSplitter::handle:horizontal {{ width: 5px; }}
+        QToolBar {{ background-color: {UP_LIGHT_GRAY}; border: none; }}
+        QToolButton:hover {{ background-color: {UP_MEDIUM_GRAY}; border-radius: 3px; }}
+        QToolButton:checked {{ background-color: {UP_FOREST_GREEN}; border-radius: 3px; }}
+    """
+    app.setStyleSheet(stylesheet)
+    window = SpectraViewer()
+    window.show()
+    sys.exit(app.exec())
