@@ -1,4 +1,3 @@
-
 import os
 import glob
 import spectrochempy as spc
@@ -10,28 +9,68 @@ from sklearn.cross_decomposition import PLSRegression
 from sklearn.metrics import mean_squared_error, r2_score
 
 def load_spectra_from_folder(folder_path):
+    """
+    --- CHANGED ---
+    Now returns both the spectra data and the wavenumber axis from the first file.
+    """
     spectra_data = {}
+    wavenumbers = None  # Initialize wavenumbers as None
     for file_path in glob.glob(os.path.join(glob.escape(folder_path), '*.spa')):
         filename = os.path.basename(file_path)
         try:
             nd = spc.read_spa(file_path)
+            # --- NEW: Capture the wavenumber axis from the first valid file ---
+            if wavenumbers is None:
+                wavenumbers = nd.x.data
+            # --- END NEW ---
             spectra_data[filename] = {'nd': nd, 'intensity': nd.data.squeeze(), 'refs': {}}
         except Exception as e:
             print(f"Error loading {filename}: {e}")
-    return spectra_data
+    
+    # Return both the data and the common x-axis
+    return spectra_data, wavenumbers
 
-def train_pls_model(spectra_data, target_component, num_components, current_derivative):
+def train_pls_model(spectra_data, target_component, num_components, current_derivative, wavenumbers, region_start=None, region_end=None):
+    """
+    --- CHANGED ---
+    Accepts wavenumber axis and region boundaries to slice the data before training.
+    """
     X_list, y_list = [], []
-    for filename, data in spectra_data.items():
+    for data in spectra_data.values():
         ref_val = data['refs'].get(target_component)
         if ref_val is not None:
-            X_list.append(get_processed_intensity(data['intensity'], current_derivative))
+            processed_intensity = get_processed_intensity(data['intensity'], current_derivative)
+            X_list.append(processed_intensity)
             y_list.append(ref_val)
 
     if len(X_list) < 5:
         return None, None, None, f"Need at least 5 reference values for '{target_component}' to train a model."
 
-    X, y = np.array(X_list), np.array(y_list)
+    # This is the full, unsliced data
+    X_full = np.array(X_list)
+    y = np.array(y_list)
+
+    # --- NEW: Slice the X data based on the selected region ---
+    if region_start is not None and region_end is not None and wavenumbers is not None:
+        # Make it robust: user can enter start/end in any order
+        start_wn = min(region_start, region_end)
+        end_wn = max(region_start, region_end)
+        
+        # Create a boolean mask for the wavenumbers within the selected region
+        region_mask = (wavenumbers >= start_wn) & (wavenumbers <= end_wn)
+        
+        # Apply the mask to the spectral data (X)
+        X = X_full[:, region_mask]
+        
+        # Edge case: If the region is invalid and contains no data points
+        if X.shape[1] == 0:
+            return None, None, None, "The selected region contains no data points. Please check the values."
+    else:
+        # If no region is set, use the full spectrum
+        X = X_full
+    # --- END NEW ---
+
+    # The rest of the function now operates on the new, potentially sliced X
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
     
     scaler = StandardScaler()
@@ -48,6 +87,10 @@ def train_pls_model(spectra_data, target_component, num_components, current_deri
     return model, scaler, r2, rmse
 
 def get_processed_intensity(original_intensity, derivative_order):
+    """
+    --- NO CHANGE ---
+    This function is self-contained and does not need to be modified.
+    """
     if derivative_order == 0:
         return original_intensity
     
