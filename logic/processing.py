@@ -80,8 +80,22 @@ def train_pls_model(spectra_data, target_component, num_components, current_deri
         )
         return None, None, None, None, error_message
 
-    # --- NEW: Cross-validation using a pipeline ---
-    # Create a pipeline that first scales the data, then applies PLS
+    n_samples = X.shape[0]
+    if n_samples < 2:
+        return None, None, None, None, "Not enough samples to train the model."
+
+    # --- NEW: Validate that cv_folds is not greater than the number of samples ---
+    if cv_folds > n_samples:
+        error_message = (
+            f"Invalid number of CV Folds: {cv_folds}.\n\n"
+            f"The number of cross-validation folds cannot be greater than the number of samples.\n"
+            f"You have {n_samples} samples for this component.\n\n"
+            f"Please set 'CV Folds' to a value less than or equal to {n_samples}."
+        )
+        return None, None, None, None, error_message
+    # --- END NEW ---
+
+    # Create a pipeline with a scaler and PLS regression model
     pipeline = Pipeline([
         ('scaler', StandardScaler()),
         ('pls', PLSRegression(n_components=num_components))

@@ -16,12 +16,13 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 
 # Import from the correct, separated logic and ui files
 from logic.processing import load_spectra_from_folder, train_pls_model, get_processed_intensity
+from logic.prediction_logic import predict_from_model
 from .stylesheet import UP_MAROON, UP_FOREST_GREEN, UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY
 
 class SpectraViewer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Interactive Chemometrics App - UPLB-IPB")
+        self.setWindowTitle("IRIS - UPLB-IPB")
         self.setGeometry(100, 100, 1600, 900)
 
         self.spectra_data = {}
@@ -40,12 +41,22 @@ class SpectraViewer(QMainWindow):
         self.region_end = None
         # --- END NEW ---
 
+        # --- NEW: State variables for prediction tab ---
+        self.prediction_model = None
+        self.prediction_spectra = {}
+        self.prediction_results = {}
+        # --- END NEW ---
+
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
         self.calibration_tab = self._create_calibration_tab()
         self.components_tab = self._create_components_tab()
+        # --- NEW: Create and add the Prediction tab ---
+        self.prediction_tab = self._create_prediction_tab()
         self.tabs.addTab(self.calibration_tab, "Calibration")
         self.tabs.addTab(self.components_tab, "Components")
+        self.tabs.addTab(self.prediction_tab, "Prediction")
+        # --- END NEW ---
 
         # --- NEW: Connect component selector change to performance display update ---
         self.component_selector_combo.currentIndexChanged.connect(self.update_performance_display)
@@ -167,6 +178,64 @@ class SpectraViewer(QMainWindow):
         main_splitter.setStretchFactor(0, 1); main_splitter.setStretchFactor(1, 2)
         return main_widget
 
+    # --- NEW: Method to create the entire Prediction Tab ---
+    def _create_prediction_tab(self):
+        main_widget = QWidget()
+        layout = QHBoxLayout(main_widget)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # Left Panel for Controls
+        control_panel = QWidget(); control_panel.setObjectName("ControlPanel")
+        cp_layout = QVBoxLayout(control_panel); cp_layout.setContentsMargins(15, 15, 15, 15); cp_layout.setSpacing(15)
+        
+        title = QLabel("Prediction Workflow"); title.setObjectName("PanelHeaderLabel")
+
+        # Model Loading Section
+        model_layout = QVBoxLayout()
+        self.btn_load_pred_model = QPushButton("1. Load Model (.chemom)")
+        self.lbl_loaded_model = QLabel("No model loaded."); self.lbl_loaded_model.setObjectName("PerfLabel")
+        model_layout.addWidget(self.btn_load_pred_model)
+        model_layout.addWidget(self.lbl_loaded_model)
+
+        # Spectra Loading Section
+        spectra_layout = QVBoxLayout()
+        self.btn_load_pred_spectra = QPushButton("2. Load Spectra for Prediction")
+        self.lbl_loaded_spectra = QLabel("No spectra loaded."); self.lbl_loaded_spectra.setObjectName("PerfLabel")
+        spectra_layout.addWidget(self.btn_load_pred_spectra)
+        spectra_layout.addWidget(self.lbl_loaded_spectra)
+
+        # Run Prediction Button
+        self.btn_run_prediction = QPushButton("3. Run Prediction")
+        self.btn_run_prediction.setObjectName("RunButton") # Make it stand out
+
+        cp_layout.addWidget(title)
+        cp_layout.addLayout(model_layout)
+        cp_layout.addLayout(spectra_layout)
+        cp_layout.addWidget(self.btn_run_prediction)
+        cp_layout.addStretch()
+
+        # Right Panel for Results Table
+        results_panel = QWidget()
+        results_panel.setObjectName("ResultsPanel") # NEW: Add object name
+        rp_layout = QVBoxLayout(results_panel)
+        results_title = QLabel("Prediction Results"); results_title.setObjectName("PanelHeaderLabel")
+        self.prediction_table = QTableWidget()
+        self.prediction_table.setObjectName("PredictionTable") # Add object name for specific styling
+        self.prediction_table.setEditTriggers(QTableWidget.NoEditTriggers) # Make table read-only
+        rp_layout.addWidget(results_title)
+        rp_layout.addWidget(self.prediction_table)
+
+        layout.addWidget(control_panel, 1) # 1/3 of the space
+        layout.addWidget(results_panel, 2) # 2/3 of the space
+
+        # Connect signals
+        self.btn_load_pred_model.clicked.connect(self.load_prediction_model)
+        self.btn_load_pred_spectra.clicked.connect(self.load_prediction_spectra)
+        self.btn_run_prediction.clicked.connect(self.run_prediction)
+
+        return main_widget
+    # --- END NEW ---
+
     def _create_plot_panel(self):
         # This method is unchanged
         container, layout = QWidget(), QVBoxLayout()
@@ -186,6 +255,85 @@ class SpectraViewer(QMainWindow):
         container.setLayout(layout)
         self.reset_plot()
         return container
+
+    # --- NEW: Prediction Tab Methods ---
+    @Slot()
+    def load_prediction_model(self):
+        filePath, _ = QFileDialog.getOpenFileName(
+            self, "Load Prediction Model", "", "Chemometrics Models (*.chemom);;All Files (*)"
+        )
+        if not filePath:
+            return
+        try:
+            self.prediction_model = joblib.load(filePath)
+            # Basic validation
+            if 'pls_models' not in self.prediction_model or 'chemical_components' not in self.prediction_model:
+                raise ValueError("Invalid model file.")
+            self.lbl_loaded_model.setText(f"Model: {os.path.basename(filePath)}")
+            QMessageBox.information(self, "Model Loaded", "The prediction model was loaded successfully.")
+        except Exception as e:
+            self.prediction_model = None
+            self.lbl_loaded_model.setText("No model loaded.")
+            QMessageBox.critical(self, "Error", f"Failed to load the model file: {e}")
+
+    @Slot()
+    def load_prediction_spectra(self):
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder of Spectra to Predict")
+        if not folder_path:
+            return
+        # We don't need the wavenumbers here, just the spectra data
+        self.prediction_spectra, _ = load_spectra_from_folder(folder_path)
+        if not self.prediction_spectra:
+            self.lbl_loaded_spectra.setText("No spectra loaded.")
+            QMessageBox.warning(self, "No Spectra Found", "Could not find any .spa files in the selected folder.")
+        else:
+            self.lbl_loaded_spectra.setText(f"{len(self.prediction_spectra)} spectra loaded for prediction.")
+            QMessageBox.information(self, "Spectra Loaded", f"Successfully loaded {len(self.prediction_spectra)} spectra.")
+
+    @Slot()
+    def run_prediction(self):
+        if self.prediction_model is None:
+            QMessageBox.warning(self, "Missing Model", "Please load a .chemom model first.")
+            return
+        if not self.prediction_spectra:
+            QMessageBox.warning(self, "Missing Spectra", "Please load spectra to predict.")
+            return
+
+        predictions, error = predict_from_model(self.prediction_model, self.prediction_spectra)
+
+        if error:
+            QMessageBox.critical(self, "Prediction Error", error)
+            return
+
+        self.prediction_results = predictions
+        self._populate_prediction_table()
+        QMessageBox.information(self, "Success", "Prediction finished successfully.")
+
+    def _populate_prediction_table(self):
+        self.prediction_table.clear()
+        if not self.prediction_results:
+            return
+
+        # Get headers from the model's component list
+        comp_info = self.prediction_model.get('chemical_components', [])
+        headers = ["Filename"] + [f"{comp['name']} ({comp.get('unit', '')})" for comp in comp_info]
+        self.prediction_table.setColumnCount(len(headers))
+        self.prediction_table.setHorizontalHeaderLabels(headers)
+
+        sorted_filenames = sorted(self.prediction_results.keys())
+        self.prediction_table.setRowCount(len(sorted_filenames))
+
+        for row, filename in enumerate(sorted_filenames):
+            self.prediction_table.setItem(row, 0, QTableWidgetItem(filename))
+            for col, comp in enumerate(comp_info):
+                comp_name = comp['name']
+                predicted_value = self.prediction_results[filename].get(comp_name, 'N/A')
+                value_str = f"{predicted_value:.4f}" if isinstance(predicted_value, (int, float)) else str(predicted_value)
+                self.prediction_table.setItem(row, col + 1, QTableWidgetItem(value_str))
+        
+        self.prediction_table.resizeColumnsToContents()
+        self.prediction_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+    # --- END NEW ---
 
     # All component and data table update methods are unchanged
     @Slot(QTableWidgetItem)

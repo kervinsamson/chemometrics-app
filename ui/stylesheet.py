@@ -18,12 +18,16 @@ STYLESHEET = f"""
 
     /* --- Panel Styling --- */
     #ControlPanel {{ background-color: {UP_MAROON}; border-radius: 5px; }}
-    #ControlPanel QLabel {{ color: {UP_WHITE}; }}
     #PanelHeaderLabel {{
         background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; font-size: 10pt; font-weight: bold;
         padding: 8px; border-radius: 5px; qproperty-alignment: 'AlignCenter';
     }}
     
+    #ResultsPanel {{
+        background-color: {UP_WHITE};
+        border-radius: 5px;
+    }}
+
     /* --- Widget Styling --- */
     QPushButton {{
         background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; font-size: 10pt; font-weight: bold;
@@ -46,6 +50,14 @@ STYLESHEET = f"""
     QHeaderView::section {{
         background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; padding: 5px;
         font-size: 10pt; font-weight: bold; border: none;
+    }}
+
+    /* --- Style for the Prediction Table Header --- */
+    #PredictionTable QHeaderView::section {{
+        background-color: {UP_DARK_GRAY};
+        color: {UP_WHITE};
+        font-size: 11pt;
+        padding: 8px;
     }}
     
     /* --- FINAL CORRECTED SPINBOX AND COMBOBOX STYLING --- */
