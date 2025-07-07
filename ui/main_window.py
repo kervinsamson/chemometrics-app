@@ -4,10 +4,10 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
     QSplitter, QGridLayout, QLabel, QHeaderView, QMessageBox,
-    QSpinBox, QTabWidget, QComboBox, QLineEdit  # --- MODIFIED: Added QLineEdit ---
+    QSpinBox, QTabWidget, QComboBox, QLineEdit, QTextEdit
 )
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QTextOption
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -29,6 +29,10 @@ class SpectraViewer(QMainWindow):
         self.current_derivative = 0
         self.legend_visible = True
 
+        # --- NEW: State variables for model performance ---
+        self.model_performance = {} # Stores {comp_name: {'r2_cv': 0.99, 'rmsecv': 0.1}}
+        # --- END NEW ---
+
         # --- NEW: State variables for region selection ---
         self.wavenumbers = None
         self.region_start = None
@@ -42,13 +46,22 @@ class SpectraViewer(QMainWindow):
         self.tabs.addTab(self.calibration_tab, "Calibration")
         self.tabs.addTab(self.components_tab, "Components")
 
+        # --- NEW: Connect component selector change to performance display update ---
+        self.component_selector_combo.currentIndexChanged.connect(self.update_performance_display)
+        # --- END NEW ---
+
     def _create_components_tab(self):
         # This method is unchanged
         container = QWidget()
         layout = QVBoxLayout(container); layout.setContentsMargins(20, 20, 20, 20)
-        title = QLabel("Define Chemical Components"); title.setObjectName("TabTitle")
+        title = QLabel("Define Chemical Components & Model Parameters"); title.setObjectName("TabTitle") # Changed Title
         self.components_table = QTableWidget()
-        self.components_table.setColumnCount(3); self.components_table.setHorizontalHeaderLabels(["Component Name", "Abbreviation", "Unit"])
+        # --- MODIFIED: Add columns for PLS components and CV folds ---
+        self.components_table.setColumnCount(5)
+        self.components_table.setHorizontalHeaderLabels([
+            "Component Name", "Abbreviation", "Unit", "PLS Components", "CV Folds"
+        ])
+        # --- END MODIFIED ---
         self.components_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         btn_layout = QHBoxLayout()
         self.btn_add_component = QPushButton("Add New Component")
@@ -71,38 +84,20 @@ class SpectraViewer(QMainWindow):
         left_panel = QWidget(); left_panel.setObjectName("ControlPanel")
         lp_layout = QVBoxLayout(left_panel); lp_layout.setContentsMargins(15, 15, 15, 15); lp_layout.setSpacing(10)
         
-        # --- Training controls (unchanged) ---
+        # --- MODIFIED: Simplified Training Controls ---
         train_layout = QGridLayout(); train_layout.setSpacing(8)
         self.btn_load_folder = QPushButton("1. Load .spa Files")
         lbl_step2 = QLabel("2. Enter Reference Values in Table"); lbl_step2.setObjectName("PerfLabel")
-        lbl_step3 = QLabel("3. Select Component to Model:"); lbl_step3.setObjectName("PerfLabel")
-        self.component_selector_combo = QComboBox(); self.component_selector_combo.setObjectName("ComboBox")
-        lbl_step4 = QLabel("4. Set PLS Components:"); lbl_step4.setObjectName("PerfLabel")
-        self.pls_components_spinbox = QSpinBox()
-        self.pls_components_spinbox.setMinimum(1); self.pls_components_spinbox.setMaximum(50); self.pls_components_spinbox.setValue(10)
-        self.pls_components_spinbox.setObjectName("SpinBox")
+        lbl_step3 = QLabel("3. Define Components in 'Components' Tab"); lbl_step3.setObjectName("PerfLabel")
+        self.btn_train_pls = QPushButton("4. Train All Models") # Changed text and step number
 
-        # --- NEW: CV Folds Input ---
-        lbl_step5 = QLabel("5. Set CV Folds:"); lbl_step5.setObjectName("PerfLabel")
-        self.cv_folds_spinbox = QSpinBox()
-        self.cv_folds_spinbox.setMinimum(2); self.cv_folds_spinbox.setMaximum(20); self.cv_folds_spinbox.setValue(5)
-        self.cv_folds_spinbox.setObjectName("SpinBox")
-        # --- END NEW ---
-
-        self.btn_train_pls = QPushButton("6. Train PLS Model") # Changed to step 6
         train_layout.addWidget(self.btn_load_folder, 0, 0, 1, 2)
-        train_layout.addWidget(lbl_step2, 1, 0, 1, 2); train_layout.addWidget(lbl_step3, 2, 0, 1, 2)
-        train_layout.addWidget(self.component_selector_combo, 3, 0, 1, 2); train_layout.addWidget(lbl_step4, 4, 0)
-        train_layout.addWidget(self.pls_components_spinbox, 4, 1)
-        
-        # --- NEW: Add CV Folds to layout ---
-        train_layout.addWidget(lbl_step5, 5, 0)
-        train_layout.addWidget(self.cv_folds_spinbox, 5, 1)
-        # --- END NEW ---
+        train_layout.addWidget(lbl_step2, 1, 0, 1, 2)
+        train_layout.addWidget(lbl_step3, 2, 0, 1, 2)
+        train_layout.addWidget(self.btn_train_pls, 3, 0, 1, 2) # Moved to row 3
+        # --- END MODIFIED ---
 
-        train_layout.addWidget(self.btn_train_pls, 6, 0, 1, 2) # Moved to row 6
-
-        # --- NEW: Region Selection / Zoom Controls ---
+        # --- Region Selection / Zoom Controls (Unchanged) ---
         region_header_label = QLabel("Region Selection / Zoom"); region_header_label.setObjectName("PanelHeaderLabel")
         region_layout = QGridLayout(); region_layout.setSpacing(8)
         
@@ -123,11 +118,19 @@ class SpectraViewer(QMainWindow):
         table_header_label = QLabel("Calibration Data"); table_header_label.setObjectName("PanelHeaderLabel")
         self.data_table = QTableWidget(); self.data_table.itemChanged.connect(self.update_reference_value)
 
+        # --- MODIFIED: Performance display now linked to the component selector ---
         perf_label = QLabel("Model Performance"); perf_label.setObjectName("PanelHeaderLabel")
         perf_layout = QGridLayout()
-        self.lbl_r2, self.lbl_rmse = QLabel("R² (Test): N/A"), QLabel("RMSE (Test): N/A")
+        # Add the component selector here to choose which model's performance to view
+        lbl_perf_comp = QLabel("Show Performance For:"); lbl_perf_comp.setObjectName("PerfLabel")
+        self.component_selector_combo = QComboBox(); self.component_selector_combo.setObjectName("ComboBox")
+        self.lbl_r2, self.lbl_rmse = QLabel("R² (CV): N/A"), QLabel("RMSECV: N/A")
         self.lbl_r2.setObjectName("PerfLabel"); self.lbl_rmse.setObjectName("PerfLabel")
-        perf_layout.addWidget(self.lbl_r2, 0, 0); perf_layout.addWidget(self.lbl_rmse, 0, 1)
+        perf_layout.addWidget(lbl_perf_comp, 0, 0)
+        perf_layout.addWidget(self.component_selector_combo, 0, 1)
+        perf_layout.addWidget(self.lbl_r2, 1, 0)
+        perf_layout.addWidget(self.lbl_rmse, 1, 1)
+        # --- END MODIFIED ---
         
         # --- MODIFIED: Assemble the left panel with the new section ---
         lp_layout.addLayout(train_layout)
@@ -181,19 +184,51 @@ class SpectraViewer(QMainWindow):
             if old_name == new_value: return
             comp_dict['name'] = new_value
             if old_name in self.pls_models: self.pls_models[new_value] = self.pls_models.pop(old_name)
+            if old_name in self.model_performance: self.model_performance[new_value] = self.model_performance.pop(old_name)
             for spec_data in self.spectra_data.values():
                 if old_name in spec_data['refs']: spec_data['refs'][new_value] = spec_data['refs'].pop(old_name)
             self._update_all_dynamic_widgets()
         elif col == 1: comp_dict['abbrev'] = new_value
         elif col == 2: comp_dict['unit'] = new_value
+        # --- NEW: Handle updates for PLS Components and CV Folds ---
+        elif col in [3, 4]:
+            try:
+                val = int(new_value)
+                if col == 3:
+                    if val < 1: raise ValueError("Must be positive")
+                    comp_dict['pls_components'] = val
+                elif col == 4:
+                    if val < 2: raise ValueError("Must be at least 2")
+                    comp_dict['cv_folds'] = val
+            except (ValueError, TypeError):
+                QMessageBox.warning(self, "Invalid Input", "Please enter a valid integer.")
+                # Revert to old value
+                self.components_table.blockSignals(True)
+                if col == 3: item.setText(str(comp_dict.get('pls_components', 10)))
+                elif col == 4: item.setText(str(comp_dict.get('cv_folds', 5)))
+                self.components_table.blockSignals(False)
+        # --- END NEW ---
     @Slot()
     def add_component(self): # Unchanged
         row_count = self.components_table.rowCount(); self.components_table.insertRow(row_count)
         new_comp_name = f"NewComponent{row_count+1}"
-        self.chemical_components.append({'name': new_comp_name, 'abbrev': '', 'unit': ''})
+        # --- MODIFIED: Add default model parameters to the component dictionary ---
+        self.chemical_components.append({
+            'name': new_comp_name, 
+            'abbrev': '', 
+            'unit': '',
+            'pls_components': 10, # Default value
+            'cv_folds': 5         # Default value
+        })
+        # --- END MODIFIED ---
         self.components_table.blockSignals(True)
         self.components_table.setItem(row_count, 0, QTableWidgetItem(new_comp_name))
-        self.components_table.setItem(row_count, 1, QTableWidgetItem("")); self.components_table.setItem(row_count, 2, QTableWidgetItem(""))
+        self.components_table.setItem(row_count, 1, QTableWidgetItem(""))
+        self.components_table.setItem(row_count, 2, QTableWidgetItem(""))
+        # --- NEW: Set default values in the table ---
+        self.components_table.setItem(row_count, 3, QTableWidgetItem("10"))
+        self.components_table.setItem(row_count, 4, QTableWidgetItem("5"))
+        # --- END NEW ---
         self.components_table.blockSignals(False); self._update_all_dynamic_widgets()
     @Slot()
     def remove_component(self): # Unchanged
@@ -201,6 +236,7 @@ class SpectraViewer(QMainWindow):
         if current_row < 0: QMessageBox.warning(self, "Warning", "Please select a component to remove."); return
         comp_name_to_remove = self.chemical_components[current_row]['name']; del self.chemical_components[current_row]
         if comp_name_to_remove in self.pls_models: del self.pls_models[comp_name_to_remove]
+        if comp_name_to_remove in self.model_performance: del self.model_performance[comp_name_to_remove]
         for spec_data in self.spectra_data.values():
             if comp_name_to_remove in spec_data['refs']: del spec_data['refs'][comp_name_to_remove]
         self.components_table.removeRow(current_row); self._update_all_dynamic_widgets()
@@ -211,9 +247,26 @@ class SpectraViewer(QMainWindow):
             self.components_table.setItem(i, 0, QTableWidgetItem(comp['name']))
             self.components_table.setItem(i, 1, QTableWidgetItem(comp.get('abbrev', '')))
             self.components_table.setItem(i, 2, QTableWidgetItem(comp.get('unit', '')))
+            # --- NEW: Populate model parameter columns ---
+            self.components_table.setItem(i, 3, QTableWidgetItem(str(comp.get('pls_components', 10))))
+            self.components_table.setItem(i, 4, QTableWidgetItem(str(comp.get('cv_folds', 5))))
+            # --- END NEW ---
         self.components_table.blockSignals(False)
-        self._update_data_table_columns(); self.component_selector_combo.clear()
-        self.component_selector_combo.addItems([comp['name'] for comp in self.chemical_components])
+        self._update_data_table_columns()
+        
+        # --- MODIFIED: Update component selector and performance display ---
+        current_selection = self.component_selector_combo.currentText()
+        self.component_selector_combo.blockSignals(True)
+        self.component_selector_combo.clear()
+        comp_names = [comp['name'] for comp in self.chemical_components]
+        if comp_names:
+            self.component_selector_combo.addItems(comp_names)
+            if current_selection in comp_names:
+                self.component_selector_combo.setCurrentText(current_selection)
+        self.component_selector_combo.blockSignals(False)
+        self.update_performance_display() # Explicitly call to refresh labels
+        # --- END MODIFIED ---
+
     def _update_data_table_columns(self): # Unchanged
         headers = ["Filename"] + [comp['name'] for comp in self.chemical_components]
         self.data_table.setColumnCount(len(headers))
@@ -245,6 +298,19 @@ class SpectraViewer(QMainWindow):
             old_value = self.spectra_data[filename]['refs'].get(comp_name)
             item.setText(f"{old_value:.4f}" if old_value is not None else "")
 
+    # --- NEW: Method to update performance labels based on combobox ---
+    @Slot()
+    def update_performance_display(self):
+        component_name = self.component_selector_combo.currentText()
+        if component_name and component_name in self.model_performance:
+            perf = self.model_performance[component_name]
+            self.lbl_r2.setText(f"R² (CV): {perf['r2_cv']:.4f}")
+            self.lbl_rmse.setText(f"RMSECV: {perf['rmsecv']:.4f}")
+        else:
+            self.lbl_r2.setText("R² (CV): N/A")
+            self.lbl_rmse.setText("RMSECV: N/A")
+    # --- END NEW ---
+
     # --- NEW: Methods to handle region selection button clicks ---
     @Slot()
     def apply_region(self):
@@ -274,41 +340,85 @@ class SpectraViewer(QMainWindow):
         self.reset_plot() # This will now reset the region view and plot
         QMessageBox.information(self, "Success", f"Loaded {len(self.spectra_data)} spectra.")
 
-    # --- MODIFIED: train_pls_model_action to pass region and CV values to the logic function ---
+    # --- MODIFIED: train_pls_model_action to loop through all components ---
     def train_pls_model_action(self):
-        target_component = self.component_selector_combo.currentText()
-        if not target_component:
-            QMessageBox.warning(self, "Warning", "Please define and select a component to model.")
+        if not self.chemical_components:
+            QMessageBox.warning(self, "Warning", "Please define at least one component in the 'Components' tab before training.")
+            return
+        
+        if not self.spectra_data:
+            QMessageBox.warning(self, "Warning", "Please load spectral data before training.")
             return
 
-        num_components = self.pls_components_spinbox.value()
-        cv_folds = self.cv_folds_spinbox.value()
+        self.pls_models.clear()
+        self.model_performance.clear()
+        
+        success_count = 0
+        error_messages = []
 
-        # Call the logic function, now with cv_folds
-        model, scaler, r2_cv, rmsecv, error_message = train_pls_model(
-            self.spectra_data,
-            target_component,
-            num_components,
-            self.current_derivative,
-            self.wavenumbers,
-            self.region_start,
-            self.region_end,
-            cv_folds  # Pass the number of folds
-        )
+        for component in self.chemical_components:
+            target_component = component['name']
+            num_components = component['pls_components']
+            cv_folds = component['cv_folds']
 
-        if error_message:
-            QMessageBox.critical(self, "Training Error", error_message)
-            self.lbl_r2.setText("R² (CV): N/A")
-            self.lbl_rmse.setText("RMSECV: N/A")
-            return
+            model, scaler, r2_cv, rmsecv, error = train_pls_model(
+                self.spectra_data,
+                target_component,
+                num_components,
+                self.current_derivative,
+                self.wavenumbers,
+                self.region_start,
+                self.region_end,
+                cv_folds
+            )
 
-        # Store the trained model and scaler
-        self.pls_models[target_component] = {'model': model, 'scaler': scaler}
+            if error:
+                error_messages.append(f"Could not train model for '{target_component}':\n{error}")
+            else:
+                self.pls_models[target_component] = {'model': model, 'scaler': scaler}
+                self.model_performance[target_component] = {'r2_cv': r2_cv, 'rmsecv': rmsecv}
+                success_count += 1
+        
+        # --- Report summary of training ---
+        summary_message = f"Training finished for {len(self.chemical_components)} component(s).\n\n"
+        summary_message += f"Successfully trained: {success_count}\n"
+        summary_message += f"Failed: {len(error_messages)}"
 
-        # Update the performance labels with the cross-validated scores
-        self.lbl_r2.setText(f"R² (CV): {r2_cv:.4f}")
-        self.lbl_rmse.setText(f"RMSECV: {rmsecv:.4f}")
-        QMessageBox.information(self, "Training Complete", f"Model for '{target_component}' has been trained with {cv_folds}-fold cross-validation.")
+        # --- MODIFIED: Use a custom resizable dialog for showing details ---
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Training Report")
+        msg_box.setText(summary_message)
+        msg_box.setStandardButtons(QMessageBox.Ok)
+
+        if error_messages:
+            detailed_text = "--- Errors ---\n" + "\n\n".join(error_messages)
+            msg_box.setDetailedText(detailed_text)
+            msg_box.setIcon(QMessageBox.Warning)
+            # Find the text edit for detailed text and make it readable
+            # This is a bit of a hack, but it's a common way to customize QMessageBox
+            for child in msg_box.findChildren(QTextEdit):
+                child.setReadOnly(True) # Ensure it's not editable
+                child.setStyleSheet("QTextEdit { background-color: #FFFFFF; color: #000000; }")
+                break # Stop after finding the first one
+        else:
+            msg_box.setIcon(QMessageBox.Information)
+
+        # Make the message box resizable by accessing its layout
+        # This is another hacky but effective approach
+        sp = msg_box.findChild(QSplitter)
+        if sp:
+            sp.setHandleWidth(1) # Make the splitter handle visible and draggable
+        
+        # A more robust way to make it resizable
+        msg_box.setSizeGripEnabled(True)
+        msg_box.setStyleSheet("QMessageBox { min-width: 400px; min-height: 200px; }")
+
+
+        msg_box.exec()
+        # --- END MODIFIED ---
+
+        # Refresh the performance display for the currently selected component
+        self.update_performance_display()
 
     def _style_matplotlib_toolbar(self): # Unchanged
         icon_color = QColor(UP_DARK_GRAY)
