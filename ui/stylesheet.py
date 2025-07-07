@@ -36,6 +36,13 @@ STYLESHEET = f"""
     /* --- Table Styling --- */
     QTableWidget {{ background-color: {UP_WHITE}; color: {UP_DARK_GRAY}; border: none; gridline-color: {UP_LIGHT_GRAY}; }}
     QTableWidget::item:selected {{ background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; }}
+    
+    /* --- FIX for unreadable text during editing --- */
+    QTableWidget QLineEdit {{
+        color: {UP_DARK_GRAY};
+        background-color: {UP_WHITE};
+    }}
+    
     QHeaderView::section {{
         background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; padding: 5px;
         font-size: 10pt; font-weight: bold; border: none;

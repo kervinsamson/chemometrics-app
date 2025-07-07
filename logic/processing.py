@@ -3,10 +3,11 @@ import glob
 import spectrochempy as spc
 import numpy as np
 from scipy.signal import savgol_filter
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_predict, KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.pipeline import Pipeline
 
 def load_spectra_from_folder(folder_path):
     """
@@ -30,10 +31,11 @@ def load_spectra_from_folder(folder_path):
     # Return both the data and the common x-axis
     return spectra_data, wavenumbers
 
-def train_pls_model(spectra_data, target_component, num_components, current_derivative, wavenumbers, region_start=None, region_end=None):
+def train_pls_model(spectra_data, target_component, num_components, current_derivative, wavenumbers, region_start=None, region_end=None, cv_folds=5):
     """
     --- CHANGED ---
-    Accepts wavenumber axis and region boundaries to slice the data before training.
+    Accepts wavenumber axis, region boundaries, and number of CV folds.
+    Performs k-fold cross-validation instead of a single train-test split.
     """
     X_list, y_list = [], []
     for data in spectra_data.values():
@@ -44,65 +46,66 @@ def train_pls_model(spectra_data, target_component, num_components, current_deri
             y_list.append(ref_val)
 
     if len(X_list) < 5:
-        return None, None, None, f"Need at least 5 reference values for '{target_component}' to train a model."
+        return None, None, None, None, f"Need at least 5 reference values for '{target_component}' to train a model."
 
     # This is the full, unsliced data
     X_full = np.array(X_list)
     y = np.array(y_list)
 
-    # --- NEW: Slice the X data based on the selected region ---
+    # --- Slice the X data based on the selected region (if any) ---
     if region_start is not None and region_end is not None and wavenumbers is not None:
-        # Make it robust: user can enter start/end in any order
         start_wn = min(region_start, region_end)
         end_wn = max(region_start, region_end)
-        
-        # Create a boolean mask for the wavenumbers within the selected region
         region_mask = (wavenumbers >= start_wn) & (wavenumbers <= end_wn)
-        
-        # Apply the mask to the spectral data (X)
         X = X_full[:, region_mask]
-        
-        # Edge case: If the region is invalid and contains no data points
         if X.shape[1] == 0:
-            return None, None, None, "The selected region contains no data points. Please check the values."
+            return None, None, None, None, "The selected region contains no data points. Please check the values."
     else:
-        # If no region is set, use the full spectrum
         X = X_full
-    # --- END NEW ---
 
-    # --- NEW: Validate the number of PLS components ---
-    # The number of components cannot exceed the number of samples or features.
-    # We check against the training set size, which is 70% of the total samples.
-    max_components_samples = int(X.shape[0] * 0.7) # After train/test split
+    # --- Validate the number of PLS components against CV folds ---
+    # Max components is limited by the number of features or samples in the smallest training fold
+    # Corrected calculation for the size of the smallest training fold
+    test_fold_size = -(-X.shape[0] // cv_folds) # Ceiling division
+    max_components_samples = X.shape[0] - test_fold_size
     max_components_features = X.shape[1]
     max_allowed_components = min(max_components_samples, max_components_features)
 
     if num_components > max_allowed_components:
         error_message = (
             f"Invalid number of PLS components: {num_components}.\n\n"
-            f"With the current data and region selection:\n"
-            f"- Number of Samples (for training): {max_components_samples}\n"
-            f"- Number of Spectral Points (Features): {max_components_features}\n\n"
+            f"With {cv_folds}-fold CV on {X.shape[0]} samples, the smallest training set has {max_components_samples} samples.\n"
+            f"The number of features is {max_components_features}.\n\n"
             f"Please set the number of components to a value less than or equal to {max_allowed_components}."
         )
-        return None, None, None, error_message
+        return None, None, None, None, error_message
+
+    # --- NEW: Cross-validation using a pipeline ---
+    # Create a pipeline that first scales the data, then applies PLS
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('pls', PLSRegression(n_components=num_components))
+    ])
+
+    # Define the cross-validation strategy
+    cv = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
+
+    # Get cross-validated predictions
+    y_cv_pred = cross_val_predict(pipeline, X, y, cv=cv)
+
+    # Calculate cross-validated metrics
+    r2_cv = r2_score(y, y_cv_pred)
+    rmsecv = np.sqrt(mean_squared_error(y, y_cv_pred))
     # --- END NEW ---
 
-    # The rest of the function now operates on the new, potentially sliced X
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-    
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    
-    model = PLSRegression(n_components=num_components)
-    model.fit(X_train_scaled, y_train)
-    
-    y_pred = model.predict(X_test_scaled)
-    r2 = r2_score(y_test, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-    
-    return model, scaler, r2, rmse
+    # Finally, train the model on the entire dataset for future predictions
+    final_scaler = StandardScaler()
+    X_scaled = final_scaler.fit_transform(X)
+    final_model = PLSRegression(n_components=num_components)
+    final_model.fit(X_scaled, y)
+
+    # Return the final model, its scaler, and the CV performance metrics
+    return final_model, final_scaler, r2_cv, rmsecv, None
 
 def get_processed_intensity(original_intensity, derivative_order):
     """

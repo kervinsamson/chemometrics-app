@@ -81,11 +81,26 @@ class SpectraViewer(QMainWindow):
         self.pls_components_spinbox = QSpinBox()
         self.pls_components_spinbox.setMinimum(1); self.pls_components_spinbox.setMaximum(50); self.pls_components_spinbox.setValue(10)
         self.pls_components_spinbox.setObjectName("SpinBox")
-        self.btn_train_pls = QPushButton("5. Train PLS Model")
+
+        # --- NEW: CV Folds Input ---
+        lbl_step5 = QLabel("5. Set CV Folds:"); lbl_step5.setObjectName("PerfLabel")
+        self.cv_folds_spinbox = QSpinBox()
+        self.cv_folds_spinbox.setMinimum(2); self.cv_folds_spinbox.setMaximum(20); self.cv_folds_spinbox.setValue(5)
+        self.cv_folds_spinbox.setObjectName("SpinBox")
+        # --- END NEW ---
+
+        self.btn_train_pls = QPushButton("6. Train PLS Model") # Changed to step 6
         train_layout.addWidget(self.btn_load_folder, 0, 0, 1, 2)
         train_layout.addWidget(lbl_step2, 1, 0, 1, 2); train_layout.addWidget(lbl_step3, 2, 0, 1, 2)
         train_layout.addWidget(self.component_selector_combo, 3, 0, 1, 2); train_layout.addWidget(lbl_step4, 4, 0)
-        train_layout.addWidget(self.pls_components_spinbox, 4, 1); train_layout.addWidget(self.btn_train_pls, 5, 0, 1, 2)
+        train_layout.addWidget(self.pls_components_spinbox, 4, 1)
+        
+        # --- NEW: Add CV Folds to layout ---
+        train_layout.addWidget(lbl_step5, 5, 0)
+        train_layout.addWidget(self.cv_folds_spinbox, 5, 1)
+        # --- END NEW ---
+
+        train_layout.addWidget(self.btn_train_pls, 6, 0, 1, 2) # Moved to row 6
 
         # --- NEW: Region Selection / Zoom Controls ---
         region_header_label = QLabel("Region Selection / Zoom"); region_header_label.setObjectName("PanelHeaderLabel")
@@ -259,28 +274,41 @@ class SpectraViewer(QMainWindow):
         self.reset_plot() # This will now reset the region view and plot
         QMessageBox.information(self, "Success", f"Loaded {len(self.spectra_data)} spectra.")
 
-    # --- MODIFIED: train_pls_model_action to pass region values to the logic function ---
+    # --- MODIFIED: train_pls_model_action to pass region and CV values to the logic function ---
     def train_pls_model_action(self):
         target_component = self.component_selector_combo.currentText()
         if not target_component:
             QMessageBox.warning(self, "Warning", "Please define and select a component to model.")
             return
-        
+
         num_components = self.pls_components_spinbox.value()
-        
-        model, scaler, r2, rmse = train_pls_model(
-            self.spectra_data, target_component, num_components, self.current_derivative,
-            self.wavenumbers, self.region_start, self.region_end # Pass new state to logic
+        cv_folds = self.cv_folds_spinbox.value()
+
+        # Call the logic function, now with cv_folds
+        model, scaler, r2_cv, rmsecv, error_message = train_pls_model(
+            self.spectra_data,
+            target_component,
+            num_components,
+            self.current_derivative,
+            self.wavenumbers,
+            self.region_start,
+            self.region_end,
+            cv_folds  # Pass the number of folds
         )
 
-        if model is None:
-            QMessageBox.warning(self, "Training Error", rmse) # rmse now contains the error message
+        if error_message:
+            QMessageBox.critical(self, "Training Error", error_message)
+            self.lbl_r2.setText("R² (CV): N/A")
+            self.lbl_rmse.setText("RMSECV: N/A")
             return
 
+        # Store the trained model and scaler
         self.pls_models[target_component] = {'model': model, 'scaler': scaler}
-        self.lbl_r2.setText(f"R² ({target_component}): {r2:.4f}")
-        self.lbl_rmse.setText(f"RMSE ({target_component}): {rmse:.4f}")
-        QMessageBox.information(self, "Training Complete", f"Model for '{target_component}' has been trained.")
+
+        # Update the performance labels with the cross-validated scores
+        self.lbl_r2.setText(f"R² (CV): {r2_cv:.4f}")
+        self.lbl_rmse.setText(f"RMSECV: {rmsecv:.4f}")
+        QMessageBox.information(self, "Training Complete", f"Model for '{target_component}' has been trained with {cv_folds}-fold cross-validation.")
 
     def _style_matplotlib_toolbar(self): # Unchanged
         icon_color = QColor(UP_DARK_GRAY)
