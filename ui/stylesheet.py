@@ -1,4 +1,3 @@
-
 # --- UP Visual Identity Color Palette ---
 UP_MAROON, UP_FOREST_GREEN, UP_GOLD = "#8A1538", "#134633", "#FFB81C"
 UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY, UP_MEDIUM_GRAY = "#FFFFFF", "#F0F0F0", "#333333", "#C0C0C0"
@@ -94,4 +93,27 @@ STYLESHEET = f"""
     QToolBar {{ background-color: {UP_LIGHT_GRAY}; border: none; }}
     QToolButton:hover {{ background-color: {UP_MEDIUM_GRAY}; border-radius: 3px; }}
     QToolButton:checked {{ background-color: {UP_FOREST_GREEN}; border-radius: 3px; }}
+
+    /* --- QMessageBox Styling --- */
+    QMessageBox {{
+        background-color: {UP_LIGHT_GRAY};
+    }}
+    QMessageBox QLabel {{ /* Target the text label inside the message box */
+        color: {UP_DARK_GRAY};
+        font-size: 10pt;
+    }}
+    QMessageBox QPushButton {{ /* Style buttons specifically for the message box */
+        background-color: {UP_FOREST_GREEN};
+        color: {UP_WHITE};
+        border: 1px solid {UP_GOLD};
+        border-radius: 5px;
+        padding: 8px;
+        min-width: 80px; /* Ensure buttons have a decent size */
+    }}
+    QMessageBox QPushButton:hover {{
+        background-color: #1A5C40;
+    }}
+    QMessageBox QPushButton:pressed {{
+        background-color: #0E3827;
+    }}
 """

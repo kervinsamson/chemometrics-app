@@ -70,6 +70,24 @@ def train_pls_model(spectra_data, target_component, num_components, current_deri
         X = X_full
     # --- END NEW ---
 
+    # --- NEW: Validate the number of PLS components ---
+    # The number of components cannot exceed the number of samples or features.
+    # We check against the training set size, which is 70% of the total samples.
+    max_components_samples = int(X.shape[0] * 0.7) # After train/test split
+    max_components_features = X.shape[1]
+    max_allowed_components = min(max_components_samples, max_components_features)
+
+    if num_components > max_allowed_components:
+        error_message = (
+            f"Invalid number of PLS components: {num_components}.\n\n"
+            f"With the current data and region selection:\n"
+            f"- Number of Samples (for training): {max_components_samples}\n"
+            f"- Number of Spectral Points (Features): {max_components_features}\n\n"
+            f"Please set the number of components to a value less than or equal to {max_allowed_components}."
+        )
+        return None, None, None, error_message
+    # --- END NEW ---
+
     # The rest of the function now operates on the new, potentially sliced X
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
     
