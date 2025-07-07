@@ -1,5 +1,6 @@
 import sys
 import os
+import joblib
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
@@ -97,6 +98,15 @@ class SpectraViewer(QMainWindow):
         train_layout.addWidget(self.btn_train_pls, 3, 0, 1, 2) # Moved to row 3
         # --- END MODIFIED ---
 
+        # --- NEW: Import/Export Controls ---
+        io_header_label = QLabel("Model Management"); io_header_label.setObjectName("PanelHeaderLabel")
+        io_layout = QGridLayout(); io_layout.setSpacing(8)
+        self.btn_import_models = QPushButton("Import Models")
+        self.btn_export_models = QPushButton("Export Models")
+        io_layout.addWidget(self.btn_import_models, 0, 0)
+        io_layout.addWidget(self.btn_export_models, 0, 1)
+        # --- END NEW ---
+
         # --- Region Selection / Zoom Controls (Unchanged) ---
         region_header_label = QLabel("Region Selection / Zoom"); region_header_label.setObjectName("PanelHeaderLabel")
         region_layout = QGridLayout(); region_layout.setSpacing(8)
@@ -134,6 +144,8 @@ class SpectraViewer(QMainWindow):
         
         # --- MODIFIED: Assemble the left panel with the new section ---
         lp_layout.addLayout(train_layout)
+        lp_layout.addWidget(io_header_label)
+        lp_layout.addLayout(io_layout)
         lp_layout.addWidget(region_header_label)
         lp_layout.addLayout(region_layout)
         lp_layout.addWidget(table_header_label)
@@ -144,6 +156,8 @@ class SpectraViewer(QMainWindow):
         # --- MODIFIED: Connect all button signals ---
         self.btn_load_folder.clicked.connect(self.load_folder)
         self.btn_train_pls.clicked.connect(self.train_pls_model_action)
+        self.btn_import_models.clicked.connect(self.import_models)
+        self.btn_export_models.clicked.connect(self.export_models)
         self.btn_apply_region.clicked.connect(self.apply_region)
         self.btn_reset_region.clicked.connect(self.reset_region_view)
         
@@ -419,6 +433,101 @@ class SpectraViewer(QMainWindow):
 
         # Refresh the performance display for the currently selected component
         self.update_performance_display()
+
+    # --- NEW: Import/Export Methods ---
+    @Slot()
+    def export_models(self):
+        if not self.pls_models:
+            QMessageBox.warning(self, "No Models to Export", "Please train at least one model before exporting.")
+            return
+
+        # Propose a filename based on the first component, for convenience
+        first_comp = self.chemical_components[0]['name'] if self.chemical_components else "model"
+        default_filename = f"{first_comp.replace(' ', '_')}_models.chemom"
+
+        filePath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Models",
+            default_filename,
+            "Chemometrics Models (*.chemom);;All Files (*)"
+        )
+
+        if not filePath:
+            return
+
+        # Consolidate all relevant data into a single dictionary
+        export_data = {
+            'pls_models': self.pls_models,
+            'chemical_components': self.chemical_components,
+            'model_performance': self.model_performance,
+            'wavenumbers': self.wavenumbers,
+            'processing_settings': {
+                'derivative_order': self.current_derivative,
+                'region_start': self.region_start,
+                'region_end': self.region_end,
+            }
+        }
+
+        try:
+            joblib.dump(export_data, filePath)
+            QMessageBox.information(self, "Success", f"Models successfully exported to:\n{filePath}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"An error occurred while exporting the models:\n{e}")
+
+    @Slot()
+    def import_models(self):
+        filePath, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Models",
+            "",
+            "Chemometrics Models (*.chemom);;All Files (*)"
+        )
+
+        if not filePath:
+            return
+
+        try:
+            imported_data = joblib.load(filePath)
+
+            # --- Data Validation ---
+            required_keys = ['pls_models', 'chemical_components', 'model_performance', 'wavenumbers']
+            if not all(key in imported_data for key in required_keys):
+                raise ValueError("The imported file is missing required data structures.")
+
+            # --- State Restoration ---
+            self.pls_models = imported_data.get('pls_models', {})
+            self.chemical_components = imported_data.get('chemical_components', [])
+            self.model_performance = imported_data.get('model_performance', {})
+            self.wavenumbers = imported_data.get('wavenumbers', None)
+            
+            # Restore processing settings if they exist in the file
+            proc_settings = imported_data.get('processing_settings', {})
+            self.current_derivative = proc_settings.get('derivative_order', 0)
+            self.region_start = proc_settings.get('region_start', None)
+            self.region_end = proc_settings.get('region_end', None)
+
+            # --- UI Refresh ---
+            # Clear existing data from tables and plots
+            self.spectra_data.clear() # Clear any loaded spectra, as they are not part of the model file
+            self.data_table.setRowCount(0)
+            self.reset_plot()
+
+            # Update all UI elements with the new state
+            self._update_all_dynamic_widgets()
+            
+            # Update region inputs
+            self.start_region_input.setText(str(self.region_start) if self.region_start is not None else "")
+            self.end_region_input.setText(str(self.region_end) if self.region_end is not None else "")
+
+            QMessageBox.information(self, "Success", "Models and settings have been successfully imported.")
+
+        except FileNotFoundError:
+            QMessageBox.critical(self, "Import Error", "The selected file could not be found.")
+        except ValueError as ve:
+             QMessageBox.critical(self, "Import Error", f"Invalid file format: {ve}")
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"An unexpected error occurred while importing the models:\n{e}")
+    # --- END NEW ---
 
     def _style_matplotlib_toolbar(self): # Unchanged
         icon_color = QColor(UP_DARK_GRAY)
