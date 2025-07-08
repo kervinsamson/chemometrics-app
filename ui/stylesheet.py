@@ -35,6 +35,19 @@ STYLESHEET = f"""
     }}
     QPushButton:hover {{ background-color: #1A5C40; }}
     QPushButton:pressed {{ background-color: #0E3827; }}
+    
+    /* --- NEW: Styling for checkable buttons (derivative buttons) --- */
+    QPushButton:checked {{
+        background-color: {UP_GOLD}; 
+        color: {UP_DARK_GRAY}; 
+        border: 2px solid {UP_FOREST_GREEN};
+        font-weight: bold;
+    }}
+    QPushButton:checked:hover {{
+        background-color: #E6A519; /* Slightly darker gold on hover */
+    }}
+    /* --- END NEW --- */
+    
     #PerfLabel {{ color: {UP_WHITE}; font-size: 10pt; font-weight: bold; background-color: transparent; }}
     
     /* --- Table Styling --- */

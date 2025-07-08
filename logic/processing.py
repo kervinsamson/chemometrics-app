@@ -257,9 +257,16 @@ def find_optimal_pls_components(spectra_data, target_component, current_derivati
     return optimal_components, best_r2, None
 
 def save_complete_project(spectra_data, chemical_components, pls_models, model_performance, wavenumbers, 
-                         current_derivative, region_start, region_end, file_path):
+                         current_derivative, region_start, region_end, auto_pls_components, file_path):
     """
     Save complete project including spectral data, models, and all settings.
+    
+    This function saves the complete application state including:
+    - Spectral data and reference values
+    - Chemical components and trained models
+    - Processing settings (derivative, region selection)
+    - UI state (auto PLS components checkbox)
+    - Model performance metrics
     
     Parameters:
     - spectra_data: Dictionary containing spectral data
@@ -267,9 +274,10 @@ def save_complete_project(spectra_data, chemical_components, pls_models, model_p
     - pls_models: Dictionary of trained PLS models
     - model_performance: Dictionary of model performance metrics
     - wavenumbers: Wavenumber axis array
-    - current_derivative: Current derivative order
-    - region_start: Start of spectral region
-    - region_end: End of spectral region
+    - current_derivative: Current derivative order (0=original, 1=1st, 2=2nd)
+    - region_start: Start of spectral region for analysis
+    - region_end: End of spectral region for analysis
+    - auto_pls_components: Boolean status of auto PLS components checkbox
     - file_path: Path to save the project file
     
     Returns:
@@ -287,26 +295,35 @@ def save_complete_project(spectra_data, chemical_components, pls_models, model_p
                 if data['refs']:
                     reference_values[filename] = data['refs']
                 
-                # Save spectral data for plotting
+                # Save spectral data for plotting and analysis
                 spectral_data[filename] = {
                     'intensity': data['intensity'].tolist(),  # Convert numpy to list for JSON compatibility
                     'filename': filename
                 }
         
-        # Create complete project data structure
+        # Create complete project data structure with all state information
         project_data = {
             'project_type': 'complete',
             'chemical_components': chemical_components,
             'pls_models': pls_models,
             'model_performance': model_performance,
             'wavenumbers': wavenumbers.tolist() if wavenumbers is not None else None,
+            
+            # Processing settings - these restore the exact analysis state
             'current_derivative': current_derivative,
             'region_start': region_start,
             'region_end': region_end,
+            
+            # UI state settings - these restore the exact UI appearance
+            'auto_pls_components': auto_pls_components,
+            
+            # Data
             'reference_values': reference_values,
             'spectral_data': spectral_data,
+            
+            # Metadata
             'save_timestamp': datetime.now().isoformat(),
-            'version': '1.0'
+            'version': '1.1'  # Increment version for enhanced state saving
         }
         
         # Save using joblib for compatibility with existing model files
@@ -320,11 +337,26 @@ def save_complete_project(spectra_data, chemical_components, pls_models, model_p
             'spectra': len(spectral_data)
         }
         
+        # Get derivative description
+        derivative_names = {0: "Original", 1: "1st Derivative", 2: "2nd Derivative"}
+        derivative_desc = derivative_names.get(current_derivative, "Unknown")
+        
+        # Format region information
+        region_info = ""
+        if region_start is not None and region_end is not None:
+            region_info = f"• Region: {region_start:.0f} - {region_end:.0f} cm⁻¹\n"
+        
+        # Auto PLS info
+        auto_pls_status = "Enabled" if auto_pls_components else "Disabled"
+        
         message = (f"Complete project saved successfully!\n"
                   f"• {stats['models']} trained models\n"
                   f"• {stats['components']} components\n"
                   f"• {stats['reference_values']} spectra with reference values\n"
                   f"• {stats['spectra']} spectral datasets\n"
+                  f"• Derivative: {derivative_desc}\n"
+                  f"{region_info}"
+                  f"• Auto PLS Components: {auto_pls_status}\n"
                   f"• Saved to: {file_path}")
         
         return True, message
@@ -352,6 +384,19 @@ def load_complete_project(file_path):
             if 'spectral_data' not in project_data:
                 return None, "This appears to be a legacy model file without spectral data. Use 'Import Models' instead."
         
+        # Set default values for missing keys (for backward compatibility)
+        if 'auto_pls_components' not in project_data:
+            project_data['auto_pls_components'] = False
+        
+        if 'current_derivative' not in project_data:
+            project_data['current_derivative'] = 0
+        
+        if 'region_start' not in project_data:
+            project_data['region_start'] = None
+        
+        if 'region_end' not in project_data:
+            project_data['region_end'] = None
+        
         # Convert wavenumbers back to numpy array
         if project_data.get('wavenumbers'):
             project_data['wavenumbers'] = np.array(project_data['wavenumbers'])
@@ -369,36 +414,26 @@ def load_complete_project(file_path):
             'spectra': len(project_data.get('spectral_data', {}))
         }
         
-        message = (f"Complete project loaded successfully!\n"
-                  f"• {stats['models']} trained models\n"
-                  f"• {stats['components']} components\n"
-                  f"• {stats['reference_values']} spectra with reference values\n"
-                  f"• {stats['spectra']} spectral datasets\n"
-                  f"• Saved: {save_time}")
+        # Get derivative description
+        derivative_names = {0: "Original", 1: "1st Derivative", 2: "2nd Derivative"}
+        derivative_desc = derivative_names.get(project_data.get('current_derivative', 0), "Unknown")
         
-        return project_data, message
-    
-    except Exception as e:
-        return None, f"Error loading complete project: {str(e)}"
+        # Format region information
+        region_info = ""
+        if project_data.get('region_start') is not None and project_data.get('region_end') is not None:
+            region_info = f"• Region: {project_data['region_start']:.0f} - {project_data['region_end']:.0f} cm⁻¹\n"
         
-        # Convert spectral data back to numpy arrays
-        if project_data.get('spectral_data'):
-            for filename, spec_data in project_data['spectral_data'].items():
-                spec_data['intensity'] = np.array(spec_data['intensity'])
-        
-        save_time = project_data.get('save_timestamp', 'Unknown')
-        stats = {
-            'models': len(project_data.get('pls_models', {})),
-            'components': len(project_data.get('chemical_components', [])),
-            'reference_values': len(project_data.get('reference_values', {})),
-            'spectra': len(project_data.get('spectral_data', {}))
-        }
+        # Auto PLS info
+        auto_pls_status = "Enabled" if project_data.get('auto_pls_components', False) else "Disabled"
         
         message = (f"Complete project loaded successfully!\n"
                   f"• {stats['models']} trained models\n"
                   f"• {stats['components']} components\n"
                   f"• {stats['reference_values']} spectra with reference values\n"
                   f"• {stats['spectra']} spectral datasets\n"
+                  f"• Derivative: {derivative_desc}\n"
+                  f"{region_info}"
+                  f"• Auto PLS Components: {auto_pls_status}\n"
                   f"• Saved: {save_time}")
         
         return project_data, message

@@ -22,7 +22,7 @@ from logic.processing import (
     apply_loaded_reference_values, reconstruct_spectra_data
 )
 from logic.prediction_logic import predict_from_model
-from .stylesheet import UP_MAROON, UP_FOREST_GREEN, UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY
+from .stylesheet import UP_MAROON, UP_FOREST_GREEN, UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY, STYLESHEET
 
 class SpectraViewer(QMainWindow):
     def __init__(self):
@@ -268,17 +268,29 @@ class SpectraViewer(QMainWindow):
         self.canvas = FigureCanvas(self.fig)
         self.ax = self.fig.add_subplot(111)
         self.btn_reset = QPushButton("Reset Plot")
-        self.btn_deriv1 = QPushButton("1st Derivative"); self.btn_deriv2 = QPushButton("2nd Derivative")
+        
+        # --- NEW: Make derivative buttons checkable to show active state ---
+        self.btn_original = QPushButton("Original")
+        self.btn_original.setCheckable(True)
+        self.btn_deriv1 = QPushButton("1st Derivative")
+        self.btn_deriv1.setCheckable(True)
+        self.btn_deriv2 = QPushButton("2nd Derivative")
+        self.btn_deriv2.setCheckable(True)
+        # --- END NEW ---
+        
         plot_btn_layout = QHBoxLayout()
         plot_btn_layout.addWidget(self.btn_reset)
+        plot_btn_layout.addWidget(self.btn_original)
         plot_btn_layout.addWidget(self.btn_deriv1); plot_btn_layout.addWidget(self.btn_deriv2)
         self.btn_reset.clicked.connect(self.reset_plot)
+        self.btn_original.clicked.connect(lambda: self.apply_derivative(0))
         self.btn_deriv1.clicked.connect(lambda: self.apply_derivative(1)); self.btn_deriv2.clicked.connect(lambda: self.apply_derivative(2))
         self.toolbar = NavigationToolbar(self.canvas, self)
         self._style_matplotlib_toolbar()
         layout.addLayout(plot_btn_layout); layout.addWidget(self.toolbar); layout.addWidget(self.canvas)
         container.setLayout(layout)
         self.reset_plot()
+        self._update_derivative_display()  # Ensure initial button state is correct
         return container
 
     # --- NEW: Prediction Tab Methods ---
@@ -803,7 +815,7 @@ class SpectraViewer(QMainWindow):
         success, message = save_complete_project(
             self.spectra_data, self.chemical_components, self.pls_models, 
             self.model_performance, self.wavenumbers, self.current_derivative,
-            self.region_start, self.region_end, file_path
+            self.region_start, self.region_end, self.auto_pls_components, file_path
         )
         
         if success:
@@ -855,16 +867,20 @@ class SpectraViewer(QMainWindow):
             else:
                 self.spectra_data = {}
             
-            # Update auto PLS setting if present
-            if any(comp.get('auto_pls', False) for comp in self.chemical_components):
-                self.auto_pls_components = True
-                self.auto_pls_checkbox.setChecked(True)
+            # Update auto PLS setting and refresh component table
+            self.auto_pls_components = project_data.get('auto_pls_components', False)
+            self.auto_pls_checkbox.setChecked(self.auto_pls_components)
             
-            # Update all UI elements
+            # Update all UI elements to restore exact appearance
             self._update_all_dynamic_widgets()
             self._update_derivative_display()
             self._update_region_display()
-            self.reset_plot()
+            
+            # Ensure the component table reflects the auto PLS setting
+            self.toggle_auto_pls_components()
+            
+            # Plot with loaded settings to restore the exact view
+            self.plot_spectra()
             
             QMessageBox.information(self, "Success", "Complete project loaded successfully!")
     
@@ -1034,8 +1050,9 @@ class SpectraViewer(QMainWindow):
     # Helper methods for UI updates
     def _update_derivative_display(self):
         """Update UI to reflect current derivative setting"""
-        # Update derivative buttons or display if needed
-        pass
+        self.btn_original.setChecked(self.current_derivative == 0)
+        self.btn_deriv1.setChecked(self.current_derivative == 1)
+        self.btn_deriv2.setChecked(self.current_derivative == 2)
     
     def _update_region_display(self):
         """Update region input fields"""
@@ -1053,8 +1070,9 @@ class SpectraViewer(QMainWindow):
                 painter.fillRect(pixmap.rect(), icon_color); painter.end()
                 action.setIcon(QIcon(pixmap))
 
-    def apply_derivative(self, deriv_order): # Unchanged
+    def apply_derivative(self, deriv_order):
         self.current_derivative = deriv_order
+        self._update_derivative_display()
         self.plot_spectra()
 
     # --- MODIFIED: plot_spectra to apply the visual zoom ---
@@ -1097,6 +1115,7 @@ class SpectraViewer(QMainWindow):
     # --- MODIFIED: reset_plot should also reset the region view ---
     def reset_plot(self):
         self.current_derivative = 0
+        self._update_derivative_display()
         self.reset_region_view() # This now handles resetting the zoom and replotting
 
     def toggle_legend(self): # Unchanged
