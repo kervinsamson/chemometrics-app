@@ -1,6 +1,7 @@
 import sys
 import os
 import joblib
+from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
@@ -15,7 +16,11 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 
 # Import from the correct, separated logic and ui files
-from logic.processing import load_spectra_from_folder, train_pls_model, get_processed_intensity, find_optimal_pls_components
+from logic.processing import (
+    load_spectra_from_folder, load_selected_spa_files, train_pls_model, get_processed_intensity, find_optimal_pls_components,
+    save_complete_project, load_complete_project, save_reference_values_only, load_reference_values_only,
+    apply_loaded_reference_values, reconstruct_spectra_data
+)
 from logic.prediction_logic import predict_from_model
 from .stylesheet import UP_MAROON, UP_FOREST_GREEN, UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY
 
@@ -30,6 +35,7 @@ class SpectraViewer(QMainWindow):
         self.pls_models = {}
         self.current_derivative = 0
         self.legend_visible = True
+        self.current_folder_path = None  # Store current folder path for reference
 
         # --- NEW: State variables for model performance ---
         self.model_performance = {} # Stores {comp_name: {'r2_cv': 0.99, 'rmsecv': 0.1}}
@@ -108,7 +114,7 @@ class SpectraViewer(QMainWindow):
         
         # --- MODIFIED: Simplified Training Controls ---
         train_layout = QGridLayout(); train_layout.setSpacing(8)
-        self.btn_load_folder = QPushButton("1. Load .spa Files")
+        self.btn_load_folder = QPushButton("1. Load .spa Files (Folder or Individual)")
         lbl_step2 = QLabel("2. Enter Reference Values in Table"); lbl_step2.setObjectName("PerfLabel")
         lbl_step3 = QLabel("3. Define Components in 'Components' Tab"); lbl_step3.setObjectName("PerfLabel")
         self.btn_train_pls = QPushButton("4. Train All Models") # Changed text and step number
@@ -120,12 +126,18 @@ class SpectraViewer(QMainWindow):
         # --- END MODIFIED ---
 
         # --- NEW: Import/Export Controls ---
-        io_header_label = QLabel("Model Management"); io_header_label.setObjectName("PanelHeaderLabel")
+        io_header_label = QLabel("Project Management"); io_header_label.setObjectName("PanelHeaderLabel")
         io_layout = QGridLayout(); io_layout.setSpacing(8)
-        self.btn_import_models = QPushButton("Import Models")
-        self.btn_export_models = QPushButton("Export Models")
-        io_layout.addWidget(self.btn_import_models, 0, 0)
-        io_layout.addWidget(self.btn_export_models, 0, 1)
+        self.btn_save_complete_project = QPushButton("Save Complete Project")
+        self.btn_load_complete_project = QPushButton("Load Complete Project")
+        self.btn_save_reference_values = QPushButton("Save Reference Values")
+        self.btn_load_reference_values = QPushButton("Load Reference Values")
+        self.btn_export_model = QPushButton("Export Model for Prediction")
+        io_layout.addWidget(self.btn_save_complete_project, 0, 0)
+        io_layout.addWidget(self.btn_load_complete_project, 0, 1)
+        io_layout.addWidget(self.btn_save_reference_values, 1, 0)
+        io_layout.addWidget(self.btn_load_reference_values, 1, 1)
+        io_layout.addWidget(self.btn_export_model, 2, 0, 1, 2)
         # --- END NEW ---
 
         # --- Region Selection / Zoom Controls (Unchanged) ---
@@ -177,8 +189,11 @@ class SpectraViewer(QMainWindow):
         # --- MODIFIED: Connect all button signals ---
         self.btn_load_folder.clicked.connect(self.load_folder)
         self.btn_train_pls.clicked.connect(self.train_pls_model_action)
-        self.btn_import_models.clicked.connect(self.import_models)
-        self.btn_export_models.clicked.connect(self.export_models)
+        self.btn_save_complete_project.clicked.connect(self.save_complete_project)
+        self.btn_load_complete_project.clicked.connect(self.load_complete_project)
+        self.btn_save_reference_values.clicked.connect(self.save_reference_values)
+        self.btn_load_reference_values.clicked.connect(self.load_reference_values)
+        self.btn_export_model.clicked.connect(self.export_model_for_prediction)
         self.btn_apply_region.clicked.connect(self.apply_region)
         self.btn_reset_region.clicked.connect(self.reset_region_view)
         
@@ -288,14 +303,46 @@ class SpectraViewer(QMainWindow):
 
     @Slot()
     def load_prediction_spectra(self):
-        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder of Spectra to Predict")
-        if not folder_path:
+        """Load spectra for prediction with user-friendly options"""
+        # Ask user what they want to do
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Load Spectra for Prediction")
+        msg_box.setText("How would you like to load your .spa files for prediction?")
+        
+        folder_btn = msg_box.addButton("Load Folder", QMessageBox.ActionRole)
+        files_btn = msg_box.addButton("Select Files", QMessageBox.ActionRole)
+        cancel_btn = msg_box.addButton(QMessageBox.Cancel)
+        
+        msg_box.exec_()
+        
+        if msg_box.clickedButton() == cancel_btn:
             return
-        # We don't need the wavenumbers here, just the spectra data
-        self.prediction_spectra, _ = load_spectra_from_folder(folder_path)
+        elif msg_box.clickedButton() == folder_btn:
+            # Original folder selection logic
+            folder_path = QFileDialog.getExistingDirectory(self, "Select Folder of Spectra to Predict")
+            if not folder_path:
+                return
+            # We don't need the wavenumbers here, just the spectra data
+            self.prediction_spectra, _ = load_spectra_from_folder(folder_path)
+            
+        elif msg_box.clickedButton() == files_btn:
+            # New individual file selection logic
+            file_paths, _ = QFileDialog.getOpenFileNames(
+                self, 
+                "Select .spa Files for Prediction", 
+                "", 
+                "SPA Files (*.spa);;All Files (*)"
+            )
+            
+            if not file_paths:
+                return
+                
+            self.prediction_spectra, _ = load_selected_spa_files(file_paths)
+        
+        # Common result handling for both methods
         if not self.prediction_spectra:
             self.lbl_loaded_spectra.setText("No spectra loaded.")
-            QMessageBox.warning(self, "No Spectra Found", "Could not find any .spa files in the selected folder.")
+            QMessageBox.warning(self, "No Spectra Found", "Could not load any .spa files.")
         else:
             self.lbl_loaded_spectra.setText(f"{len(self.prediction_spectra)} spectra loaded for prediction.")
             QMessageBox.information(self, "Spectra Loaded", f"Successfully loaded {len(self.prediction_spectra)} spectra.")
@@ -548,12 +595,74 @@ class SpectraViewer(QMainWindow):
 
     # --- MODIFIED: load_folder to capture wavenumbers from the logic function ---
     def load_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder Containing .spa Files")
-        if not folder_path: return
-        self.spectra_data, self.wavenumbers = load_spectra_from_folder(folder_path)
-        self._update_all_dynamic_widgets()
-        self.reset_plot() # This will now reset the region view and plot
-        QMessageBox.information(self, "Success", f"Loaded {len(self.spectra_data)} spectra.")
+        """Load .spa files with user-friendly options for folder or individual file selection"""
+        # Ask user what they want to do
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Load .spa Files")
+        msg_box.setText("How would you like to load your .spa files?")
+        # msg_box.setInformativeText("Choose the option that best fits your needs:")
+        
+        folder_btn = msg_box.addButton("Load Folder", QMessageBox.ActionRole)
+        files_btn = msg_box.addButton("Select Files", QMessageBox.ActionRole)
+        cancel_btn = msg_box.addButton(QMessageBox.Cancel)
+        
+        # Set tooltips for clarity
+        folder_btn.setToolTip("Load all .spa files from a folder")
+        files_btn.setToolTip("Choose specific .spa files")
+        
+        msg_box.exec_()
+        
+        if msg_box.clickedButton() == cancel_btn:
+            return
+        elif msg_box.clickedButton() == folder_btn:
+            # Original folder selection logic
+            folder_path = QFileDialog.getExistingDirectory(self, "Select Folder Containing .spa Files")
+            if not folder_path: 
+                return
+            
+            self.current_folder_path = folder_path  # Store for reference
+            self.spectra_data, self.wavenumbers = load_spectra_from_folder(folder_path)
+            
+            if not self.spectra_data:
+                QMessageBox.warning(self, "No Files Found", "No .spa files found in the selected folder.")
+                return
+                
+            self._update_all_dynamic_widgets()
+            self.reset_plot() # This will now reset the region view and plot
+            QMessageBox.information(self, "Success", f"Loaded {len(self.spectra_data)} spectra from folder.")
+            
+        elif msg_box.clickedButton() == files_btn:
+            # New individual file selection logic
+            file_paths, _ = QFileDialog.getOpenFileNames(
+                self, 
+                "Select .spa Files", 
+                "", 
+                "SPA Files (*.spa);;All Files (*)"
+            )
+            
+            if not file_paths:
+                return
+            
+            # Store folder path of the first file for reference
+            if file_paths:
+                self.current_folder_path = os.path.dirname(file_paths[0])
+            
+            from logic.processing import load_selected_spa_files
+            self.spectra_data, self.wavenumbers = load_selected_spa_files(file_paths)
+            
+            if not self.spectra_data:
+                QMessageBox.warning(self, "No Files Loaded", "Could not load any of the selected files.")
+                return
+                
+            self._update_all_dynamic_widgets()
+            self.reset_plot()
+            
+            # Show summary of what was loaded
+            summary = f"Loaded {len(self.spectra_data)} spectra from {len(file_paths)} selected files."
+            if len(self.spectra_data) < len(file_paths):
+                failed_count = len(file_paths) - len(self.spectra_data)
+                summary += f"\n{failed_count} files failed to load."
+            QMessageBox.information(self, "Success", summary)
 
     # --- MODIFIED: train_pls_model_action to loop through all components ---
     def train_pls_model_action(self):
@@ -671,99 +780,268 @@ class SpectraViewer(QMainWindow):
         # Refresh the performance display for the currently selected component
         self.update_performance_display()
 
-    # --- NEW: Import/Export Methods ---
+    # --- NEW: Complete Project Save/Load Methods ---
     @Slot()
-    def export_models(self):
-        if not self.pls_models:
-            QMessageBox.warning(self, "No Models to Export", "Please train at least one model before exporting.")
+    def save_complete_project(self):
+        """Save complete project including spectral data, models, and all settings"""
+        if not self.spectra_data:
+            QMessageBox.warning(self, "Warning", "No spectral data loaded. Please load spectra first.")
             return
-
+        
+        # Propose a filename based on the first component, for convenience
+        first_comp = self.chemical_components[0]['name'] if self.chemical_components else "project"
+        default_filename = f"{first_comp.replace(' ', '_')}_complete_project.chemom"
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Complete Project", default_filename,
+            "Chemometrics Complete Project (*.chemom);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        success, message = save_complete_project(
+            self.spectra_data, self.chemical_components, self.pls_models, 
+            self.model_performance, self.wavenumbers, self.current_derivative,
+            self.region_start, self.region_end, file_path
+        )
+        
+        if success:
+            QMessageBox.information(self, "Success", message)
+        else:
+            QMessageBox.critical(self, "Error", message)
+    
+    @Slot()
+    def load_complete_project(self):
+        """Load complete project including spectral data, models, and all settings"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Load Complete Project", "",
+            "Chemometrics Complete Project (*.chemom);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        project_data, message = load_complete_project(file_path)
+        
+        if project_data is None:
+            QMessageBox.critical(self, "Error", message)
+            return
+        
+        # Ask user for confirmation as this will replace current data
+        reply = QMessageBox.question(
+            self, "Load Complete Project",
+            f"{message}\n\nThis will replace all current data. Continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Restore all project data
+            self.chemical_components = project_data.get('chemical_components', [])
+            self.pls_models = project_data.get('pls_models', {})
+            self.model_performance = project_data.get('model_performance', {})
+            self.wavenumbers = project_data.get('wavenumbers', None)
+            self.current_derivative = project_data.get('current_derivative', 0)
+            self.region_start = project_data.get('region_start', None)
+            self.region_end = project_data.get('region_end', None)
+            
+            # Reconstruct spectra data
+            spectral_data = project_data.get('spectral_data', {})
+            reference_values = project_data.get('reference_values', {})
+            
+            if spectral_data and self.wavenumbers is not None:
+                self.spectra_data = reconstruct_spectra_data(spectral_data, reference_values, self.wavenumbers)
+            else:
+                self.spectra_data = {}
+            
+            # Update auto PLS setting if present
+            if any(comp.get('auto_pls', False) for comp in self.chemical_components):
+                self.auto_pls_components = True
+                self.auto_pls_checkbox.setChecked(True)
+            
+            # Update all UI elements
+            self._update_all_dynamic_widgets()
+            self._update_derivative_display()
+            self._update_region_display()
+            self.reset_plot()
+            
+            QMessageBox.information(self, "Success", "Complete project loaded successfully!")
+    
+    @Slot()
+    def save_reference_values(self):
+        """Save only reference values in a lightweight format"""
+        if not self.spectra_data:
+            QMessageBox.warning(self, "Warning", "No spectral data loaded. Please load spectra first.")
+            return
+        
+        # Check if there are any reference values to save
+        has_refs = any(data['refs'] for data in self.spectra_data.values())
+        if not has_refs:
+            QMessageBox.warning(self, "Warning", "No reference values entered. Please enter some reference values first.")
+            return
+        
+        # Propose a filename based on the first component, for convenience
+        first_comp = self.chemical_components[0]['name'] if self.chemical_components else "references"
+        default_filename = f"{first_comp.replace(' ', '_')}_reference_values.json"
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Reference Values", default_filename,
+            "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        success, message = save_reference_values_only(
+            self.spectra_data, self.chemical_components, file_path
+        )
+        
+        if success:
+            QMessageBox.information(self, "Success", message)
+        else:
+            QMessageBox.critical(self, "Error", message)
+    
+    @Slot()
+    def load_reference_values(self):
+        """Load reference values from a lightweight reference values file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Load Reference Values", "",
+            "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        ref_data, message = load_reference_values_only(file_path)
+        
+        if ref_data is None:
+            QMessageBox.critical(self, "Error", message)
+            return
+        
+        # Ask user how to handle the reference values
+        if self.spectra_data:
+            # If spectra are already loaded, ask if user wants to apply reference values
+            reply = QMessageBox.question(
+                self, "Load Reference Values",
+                f"{message}\n\nApply these reference values to currently loaded spectra?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                reference_values = ref_data.get('reference_values', {})
+                updated_count, missing_spectra = apply_loaded_reference_values(
+                    self.spectra_data, reference_values
+                )
+                
+                # Update components if they don't exist
+                loaded_components = ref_data.get('chemical_components', [])
+                if loaded_components and not self.chemical_components:
+                    self.chemical_components = loaded_components
+                
+                # Update UI
+                self._update_all_dynamic_widgets()
+                
+                # Show summary
+                summary = f"Reference values applied!\n• {updated_count} spectra updated"
+                if missing_spectra:
+                    summary += f"\n• {len(missing_spectra)} spectra not found in current data"
+                    if len(missing_spectra) <= 5:
+                        summary += f"\n  Missing: {', '.join(missing_spectra)}"
+                
+                QMessageBox.information(self, "Success", summary)
+        else:
+            # If no spectra loaded, just load the components
+            reply = QMessageBox.question(
+                self, "Load Reference Values",
+                f"{message}\n\nNo spectra currently loaded. Load component definitions only?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                loaded_components = ref_data.get('chemical_components', [])
+                if loaded_components:
+                    self.chemical_components = loaded_components
+                    self._update_all_dynamic_widgets()
+                    QMessageBox.information(self, "Success", f"Loaded {len(loaded_components)} component definitions.")
+                else:
+                    QMessageBox.information(self, "Info", "No component definitions found in the file.")
+    
+    # --- NEW: Export model for prediction method ---
+    @Slot()
+    def export_model_for_prediction(self):
+        """Export trained models for use in prediction"""
+        if not self.pls_models:
+            QMessageBox.warning(self, "Warning", "No trained models available. Please train models first.")
+            return
+        
+        if not self.chemical_components:
+            QMessageBox.warning(self, "Warning", "No component definitions available.")
+            return
+        
         # Propose a filename based on the first component, for convenience
         first_comp = self.chemical_components[0]['name'] if self.chemical_components else "model"
-        default_filename = f"{first_comp.replace(' ', '_')}_models.chemom"
-
-        filePath, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Models",
-            default_filename,
-            "Chemometrics Models (*.chemom);;All Files (*)"
+        default_filename = f"{first_comp.replace(' ', '_')}_prediction_model.chemom"
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Model for Prediction", default_filename,
+            "Chemometrics Model (*.chemom);;All Files (*)"
         )
-
-        if not filePath:
+        
+        if not file_path:
             return
-
-        # Consolidate all relevant data into a single dictionary
-        export_data = {
-            'pls_models': self.pls_models,
-            'chemical_components': self.chemical_components,
-            'model_performance': self.model_performance,
-            'wavenumbers': self.wavenumbers,
-            'processing_settings': {
-                'derivative_order': self.current_derivative,
-                'region_start': self.region_start,
-                'region_end': self.region_end,
+        
+        try:
+            # Create the prediction model data structure
+            prediction_model_data = {
+                'project_type': 'prediction_model',
+                'chemical_components': self.chemical_components,
+                'pls_models': self.pls_models,
+                'model_performance': self.model_performance,
+                'wavenumbers': self.wavenumbers.tolist() if self.wavenumbers is not None else None,
+                'processing_settings': {
+                    'derivative_order': self.current_derivative,
+                    'region_start': self.region_start,
+                    'region_end': self.region_end
+                },
+                'export_timestamp': datetime.now().isoformat(),
+                'version': '1.0'
             }
-        }
-
-        try:
-            joblib.dump(export_data, filePath)
-            QMessageBox.information(self, "Success", f"Models successfully exported to:\n{filePath}")
-        except Exception as e:
-            QMessageBox.critical(self, "Export Error", f"An error occurred while exporting the models:\n{e}")
-
-    @Slot()
-    def import_models(self):
-        filePath, _ = QFileDialog.getOpenFileName(
-            self,
-            "Import Models",
-            "",
-            "Chemometrics Models (*.chemom);;All Files (*)"
-        )
-
-        if not filePath:
-            return
-
-        try:
-            imported_data = joblib.load(filePath)
-
-            # --- Data Validation ---
-            required_keys = ['pls_models', 'chemical_components', 'model_performance', 'wavenumbers']
-            if not all(key in imported_data for key in required_keys):
-                raise ValueError("The imported file is missing required data structures.")
-
-            # --- State Restoration ---
-            self.pls_models = imported_data.get('pls_models', {})
-            self.chemical_components = imported_data.get('chemical_components', [])
-            self.model_performance = imported_data.get('model_performance', {})
-            self.wavenumbers = imported_data.get('wavenumbers', None)
             
-            # Restore processing settings if they exist in the file
-            proc_settings = imported_data.get('processing_settings', {})
-            self.current_derivative = proc_settings.get('derivative_order', 0)
-            self.region_start = proc_settings.get('region_start', None)
-            self.region_end = proc_settings.get('region_end', None)
-
-            # --- UI Refresh ---
-            # Clear existing data from tables and plots
-            self.spectra_data.clear() # Clear any loaded spectra, as they are not part of the model file
-            self.data_table.setRowCount(0)
-            self.reset_plot()
-
-            # Update all UI elements with the new state
-            self._update_all_dynamic_widgets()
+            # Save using joblib for compatibility
+            with open(file_path, 'wb') as f:
+                joblib.dump(prediction_model_data, f)
             
-            # Update region inputs
-            self.start_region_input.setText(str(self.region_start) if self.region_start is not None else "")
-            self.end_region_input.setText(str(self.region_end) if self.region_end is not None else "")
-
-            QMessageBox.information(self, "Success", "Models and settings have been successfully imported.")
-
-        except FileNotFoundError:
-            QMessageBox.critical(self, "Import Error", "The selected file could not be found.")
-        except ValueError as ve:
-             QMessageBox.critical(self, "Import Error", f"Invalid file format: {ve}")
+            stats = {
+                'models': len(self.pls_models),
+                'components': len(self.chemical_components)
+            }
+            
+            message = (f"Model exported successfully for prediction!\n"
+                      f"• {stats['models']} trained models\n"
+                      f"• {stats['components']} components\n"
+                      f"• Processing settings included\n"
+                      f"• Exported to: {file_path}")
+            
+            QMessageBox.information(self, "Success", message)
+            
         except Exception as e:
-            QMessageBox.critical(self, "Import Error", f"An unexpected error occurred while importing the models:\n{e}")
+            QMessageBox.critical(self, "Error", f"Failed to export model: {str(e)}")
+    # --- END NEW ---
+
+    # Helper methods for UI updates
+    def _update_derivative_display(self):
+        """Update UI to reflect current derivative setting"""
+        # Update derivative buttons or display if needed
+        pass
+    
+    def _update_region_display(self):
+        """Update region input fields"""
+        self.start_region_input.setText(str(self.region_start) if self.region_start is not None else "")
+        self.end_region_input.setText(str(self.region_end) if self.region_end is not None else "")
+    
     # --- END NEW ---
 
     def _style_matplotlib_toolbar(self): # Unchanged

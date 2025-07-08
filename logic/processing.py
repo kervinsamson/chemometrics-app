@@ -2,6 +2,9 @@ import os
 import glob
 import spectrochempy as spc
 import numpy as np
+import json
+import joblib
+from datetime import datetime
 from scipy.signal import savgol_filter
 from sklearn.model_selection import train_test_split, cross_val_predict, KFold
 from sklearn.preprocessing import StandardScaler
@@ -29,6 +32,36 @@ def load_spectra_from_folder(folder_path):
             print(f"Error loading {filename}: {e}")
     
     # Return both the data and the common x-axis
+    return spectra_data, wavenumbers
+
+def load_selected_spa_files(file_paths):
+    """
+    Load specific selected .spa files instead of entire folders.
+    
+    Parameters:
+    - file_paths: List of absolute paths to .spa files
+    
+    Returns:
+    - spectra_data: Dictionary containing spectral data
+    - wavenumbers: Common wavenumber axis from the first file
+    """
+    spectra_data = {}
+    wavenumbers = None
+    
+    for file_path in file_paths:
+        if not file_path.lower().endswith('.spa'):
+            continue
+            
+        filename = os.path.basename(file_path)
+        try:
+            nd = spc.read_spa(file_path)
+            # Capture the wavenumber axis from the first valid file
+            if wavenumbers is None:
+                wavenumbers = nd.x.data
+            spectra_data[filename] = {'nd': nd, 'intensity': nd.data.squeeze(), 'refs': {}}
+        except Exception as e:
+            print(f"Error loading {filename}: {e}")
+    
     return spectra_data, wavenumbers
 
 def train_pls_model(spectra_data, target_component, num_components, current_derivative, wavenumbers, region_start=None, region_end=None, cv_folds=5):
@@ -222,3 +255,302 @@ def find_optimal_pls_components(spectra_data, target_component, current_derivati
             continue
 
     return optimal_components, best_r2, None
+
+def save_complete_project(spectra_data, chemical_components, pls_models, model_performance, wavenumbers, 
+                         current_derivative, region_start, region_end, file_path):
+    """
+    Save complete project including spectral data, models, and all settings.
+    
+    Parameters:
+    - spectra_data: Dictionary containing spectral data
+    - chemical_components: List of component dictionaries
+    - pls_models: Dictionary of trained PLS models
+    - model_performance: Dictionary of model performance metrics
+    - wavenumbers: Wavenumber axis array
+    - current_derivative: Current derivative order
+    - region_start: Start of spectral region
+    - region_end: End of spectral region
+    - file_path: Path to save the project file
+    
+    Returns:
+    - success: Boolean indicating if save was successful
+    - message: Success or error message
+    """
+    try:
+        # Extract reference values and spectral data
+        reference_values = {}
+        spectral_data = {}
+        
+        if spectra_data:
+            for filename, data in spectra_data.items():
+                # Save reference values
+                if data['refs']:
+                    reference_values[filename] = data['refs']
+                
+                # Save spectral data for plotting
+                spectral_data[filename] = {
+                    'intensity': data['intensity'].tolist(),  # Convert numpy to list for JSON compatibility
+                    'filename': filename
+                }
+        
+        # Create complete project data structure
+        project_data = {
+            'project_type': 'complete',
+            'chemical_components': chemical_components,
+            'pls_models': pls_models,
+            'model_performance': model_performance,
+            'wavenumbers': wavenumbers.tolist() if wavenumbers is not None else None,
+            'current_derivative': current_derivative,
+            'region_start': region_start,
+            'region_end': region_end,
+            'reference_values': reference_values,
+            'spectral_data': spectral_data,
+            'save_timestamp': datetime.now().isoformat(),
+            'version': '1.0'
+        }
+        
+        # Save using joblib for compatibility with existing model files
+        with open(file_path, 'wb') as f:
+            joblib.dump(project_data, f)
+        
+        stats = {
+            'models': len(pls_models),
+            'components': len(chemical_components),
+            'reference_values': len(reference_values),
+            'spectra': len(spectral_data)
+        }
+        
+        message = (f"Complete project saved successfully!\n"
+                  f"• {stats['models']} trained models\n"
+                  f"• {stats['components']} components\n"
+                  f"• {stats['reference_values']} spectra with reference values\n"
+                  f"• {stats['spectra']} spectral datasets\n"
+                  f"• Saved to: {file_path}")
+        
+        return True, message
+    
+    except Exception as e:
+        return False, f"Error saving complete project: {str(e)}"
+
+def load_complete_project(file_path):
+    """
+    Load complete project including spectral data, models, and all settings.
+    
+    Parameters:
+    - file_path: Path to the project file to load
+    
+    Returns:
+    - project_data: Dictionary containing all project data (or None if failed)
+    - message: Success or error message
+    """
+    try:
+        project_data = joblib.load(file_path)
+        
+        # Verify this is a complete project file
+        if project_data.get('project_type') != 'complete':
+            # Try to handle legacy format
+            if 'spectral_data' not in project_data:
+                return None, "This appears to be a legacy model file without spectral data. Use 'Import Models' instead."
+        
+        # Convert wavenumbers back to numpy array
+        if project_data.get('wavenumbers'):
+            project_data['wavenumbers'] = np.array(project_data['wavenumbers'])
+        
+        # Convert spectral data back to numpy arrays
+        if project_data.get('spectral_data'):
+            for filename, spec_data in project_data['spectral_data'].items():
+                spec_data['intensity'] = np.array(spec_data['intensity'])
+        
+        save_time = project_data.get('save_timestamp', 'Unknown')
+        stats = {
+            'models': len(project_data.get('pls_models', {})),
+            'components': len(project_data.get('chemical_components', [])),
+            'reference_values': len(project_data.get('reference_values', {})),
+            'spectra': len(project_data.get('spectral_data', {}))
+        }
+        
+        message = (f"Complete project loaded successfully!\n"
+                  f"• {stats['models']} trained models\n"
+                  f"• {stats['components']} components\n"
+                  f"• {stats['reference_values']} spectra with reference values\n"
+                  f"• {stats['spectra']} spectral datasets\n"
+                  f"• Saved: {save_time}")
+        
+        return project_data, message
+    
+    except Exception as e:
+        return None, f"Error loading complete project: {str(e)}"
+        
+        # Convert spectral data back to numpy arrays
+        if project_data.get('spectral_data'):
+            for filename, spec_data in project_data['spectral_data'].items():
+                spec_data['intensity'] = np.array(spec_data['intensity'])
+        
+        save_time = project_data.get('save_timestamp', 'Unknown')
+        stats = {
+            'models': len(project_data.get('pls_models', {})),
+            'components': len(project_data.get('chemical_components', [])),
+            'reference_values': len(project_data.get('reference_values', {})),
+            'spectra': len(project_data.get('spectral_data', {}))
+        }
+        
+        message = (f"Complete project loaded successfully!\n"
+                  f"• {stats['models']} trained models\n"
+                  f"• {stats['components']} components\n"
+                  f"• {stats['reference_values']} spectra with reference values\n"
+                  f"• {stats['spectra']} spectral datasets\n"
+                  f"• Saved: {save_time}")
+        
+        return project_data, message
+    
+    except Exception as e:
+        return None, f"Error loading complete project: {str(e)}"
+
+def save_reference_values_only(spectra_data, chemical_components, file_path):
+    """
+    Save only reference values in a lightweight format.
+    
+    Parameters:
+    - spectra_data: Dictionary containing spectral data
+    - chemical_components: List of component dictionaries
+    - file_path: Path to save the reference values file
+    
+    Returns:
+    - success: Boolean indicating if save was successful
+    - message: Success or error message
+    """
+    try:
+        # Extract reference values
+        reference_values = {}
+        if spectra_data:
+            for filename, data in spectra_data.items():
+                if data['refs']:
+                    reference_values[filename] = data['refs']
+        
+        if not reference_values:
+            return False, "No reference values found to save."
+        
+        # Create reference values data structure
+        ref_data = {
+            'data_type': 'reference_values',
+            'chemical_components': chemical_components,
+            'reference_values': reference_values,
+            'save_timestamp': datetime.now().isoformat(),
+            'version': '1.0'
+        }
+        
+        # Save as JSON for easy reading/editing
+        with open(file_path, 'w') as f:
+            json.dump(ref_data, f, indent=2)
+        
+        stats = {
+            'components': len(chemical_components),
+            'reference_values': len(reference_values),
+            'total_values': sum(len(refs) for refs in reference_values.values())
+        }
+        
+        message = (f"Reference values saved successfully!\n"
+                  f"• {stats['components']} components\n"
+                  f"• {stats['reference_values']} spectra with reference values\n"
+                  f"• {stats['total_values']} total reference values\n"
+                  f"• Saved to: {file_path}")
+        
+        return True, message
+    
+    except Exception as e:
+        return False, f"Error saving reference values: {str(e)}"
+
+def load_reference_values_only(file_path):
+    """
+    Load reference values from a lightweight reference values file.
+    
+    Parameters:
+    - file_path: Path to the reference values file to load
+    
+    Returns:
+    - ref_data: Dictionary containing reference values data (or None if failed)
+    - message: Success or error message
+    """
+    try:
+        with open(file_path, 'r') as f:
+            ref_data = json.load(f)
+        
+        # Verify this is a reference values file
+        if ref_data.get('data_type') != 'reference_values':
+            return None, "This file does not appear to be a reference values file."
+        
+        save_time = ref_data.get('save_timestamp', 'Unknown')
+        stats = {
+            'components': len(ref_data.get('chemical_components', [])),
+            'reference_values': len(ref_data.get('reference_values', {})),
+            'total_values': sum(len(refs) for refs in ref_data.get('reference_values', {}).values())
+        }
+        
+        message = (f"Reference values loaded successfully!\n"
+                  f"• {stats['components']} components\n"
+                  f"• {stats['reference_values']} spectra with reference values\n"
+                  f"• {stats['total_values']} total reference values\n"
+                  f"• Saved: {save_time}")
+        
+        return ref_data, message
+    
+    except Exception as e:
+        return None, f"Error loading reference values: {str(e)}"
+
+def apply_loaded_reference_values(spectra_data, reference_values):
+    """
+    Apply loaded reference values to spectra data.
+    
+    Parameters:
+    - spectra_data: Dictionary containing spectral data
+    - reference_values: Dictionary of reference values by filename
+    
+    Returns:
+    - updated_count: Number of spectra that had reference values applied
+    - missing_spectra: List of filenames that have reference values but no matching spectra
+    """
+    updated_count = 0
+    missing_spectra = []
+    
+    for filename, refs in reference_values.items():
+        if filename in spectra_data:
+            spectra_data[filename]['refs'] = refs
+            updated_count += 1
+        else:
+            missing_spectra.append(filename)
+    
+    return updated_count, missing_spectra
+
+def reconstruct_spectra_data(spectral_data, reference_values, wavenumbers):
+    """
+    Reconstruct the full spectra_data structure from saved project data.
+    
+    Parameters:
+    - spectral_data: Dictionary of spectral data from saved project
+    - reference_values: Dictionary of reference values from saved project
+    - wavenumbers: Wavenumber axis array
+    
+    Returns:
+    - spectra_data: Reconstructed spectra_data dictionary
+    """
+    spectra_data_reconstructed = {}
+    
+    for filename, spec_data in spectral_data.items():
+        # Create a mock NDDataset for compatibility with existing code
+        intensity = spec_data['intensity']
+        
+        # Create a basic mock nd object (just enough for plotting)
+        class MockNDDataset:
+            def __init__(self, intensity, wavenumbers):
+                self.data = intensity
+                self.x = type('obj', (object,), {'data': wavenumbers})()
+        
+        mock_nd = MockNDDataset(intensity, wavenumbers)
+        
+        spectra_data_reconstructed[filename] = {
+            'nd': mock_nd,
+            'intensity': intensity,
+            'refs': reference_values.get(filename, {})
+        }
+    
+    return spectra_data_reconstructed

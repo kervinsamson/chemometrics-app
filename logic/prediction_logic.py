@@ -20,6 +20,10 @@ def predict_from_model(prediction_model_data, prediction_spectra_data):
         region_start = settings.get('region_start')
         region_end = settings.get('region_end')
         model_wavenumbers = prediction_model_data['wavenumbers']
+        
+        # Convert wavenumbers to numpy array if it's a list
+        if isinstance(model_wavenumbers, list):
+            model_wavenumbers = np.array(model_wavenumbers)
 
         # Get components and models
         pls_models = prediction_model_data['pls_models']
@@ -42,20 +46,13 @@ def predict_from_model(prediction_model_data, prediction_spectra_data):
             # 1. Apply same preprocessing as the model
             processed_intensity = get_processed_intensity(original_intensity, derivative_order)
 
-            # 2. Slice the data to the same region as the model
-            X_sample_full = np.array([processed_intensity])
+            # 2. Apply region mask if it exists
             if region_mask is not None:
-                X_sample = X_sample_full[:, region_mask]
+                sliced_intensity = processed_intensity[region_mask]
             else:
-                X_sample = X_sample_full
+                sliced_intensity = processed_intensity
 
-            # Reshape single spectrum data to be a 2D array (1, n_features)
-            if processed_intensity.ndim > 1:
-                processed_intensity = processed_intensity.squeeze()
-            
-            sliced_intensity = processed_intensity[region_mask]
-
-            # Reshape the single spectrum to be a 2D array (1, n_features)
+            # 3. Reshape the single spectrum to be a 2D array (1, n_features)
             if sliced_intensity.ndim == 1:
                 reshaped_intensity = sliced_intensity.reshape(1, -1)
             else:

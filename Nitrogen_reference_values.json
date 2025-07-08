@@ -1,0 +1,88 @@
+{
+  "data_type": "reference_values",
+  "chemical_components": [
+    {
+      "name": "Nitrogen",
+      "abbrev": "N",
+      "unit": "%",
+      "pls_components": 6,
+      "cv_folds": 23
+    }
+  ],
+  "reference_values": {
+    "Rice 1  [Offline].spa": {
+      "Nitrogen": null
+    },
+    "Rice 2  [Offline].spa": {
+      "Nitrogen": 1.97390998721513
+    },
+    "Rice 3  [Offline].spa": {
+      "Nitrogen": 2.32015047021944
+    },
+    "Rice 4  [Offline].spa": {
+      "Nitrogen": 2.03570907513653
+    },
+    "Rice 5 [Offline].spa": {
+      "Nitrogen": 1.98213516645527
+    },
+    "Rice 6 [Offline].spa": {
+      "Nitrogen": 2.2793786673097
+    },
+    "Rice 7 [Offline].spa": {
+      "Nitrogen": 2.31287726067036
+    },
+    "Rice 8  [Offline].spa": {
+      "Nitrogen": 1.86787746541032
+    },
+    "Rice 9  [Offline].spa": {
+      "Nitrogen": 2.12092537607697
+    },
+    "Rice 10.spa": {
+      "Nitrogen": 1.88494222527392
+    },
+    "Rice 11.spa": {
+      "Nitrogen": 1.99103773674108
+    },
+    "Rice 12.spa": {
+      "Nitrogen": 1.81881083770285
+    },
+    "Rice 13.spa": {
+      "Nitrogen": 1.87945196153519
+    },
+    "Rice 14.spa": {
+      "Nitrogen": 1.66175117233638
+    },
+    "Rice 15.spa": {
+      "Nitrogen": 1.94740873117182
+    },
+    "Rice 16.spa": {
+      "Nitrogen": 1.75680022470934
+    },
+    "Rice 17.spa": {
+      "Nitrogen": 1.7199768845628
+    },
+    "Rice 18.spa": {
+      "Nitrogen": 1.93519992678263
+    },
+    "Rice 19.spa": {
+      "Nitrogen": 2.36589797599378
+    },
+    "Rice 20.spa": {
+      "Nitrogen": 2.05372793150174
+    },
+    "Rice 21.spa": {
+      "Nitrogen": 1.65766961686056
+    },
+    "Rice 22.spa": {
+      "Nitrogen": 2.08146075083132
+    },
+    "Rice 23.spa": {
+      "Nitrogen": 2.03175793529212
+    },
+    "Rice 24.spa": {
+      "Nitrogen": 1.80316408238239
+    }
+  },
+  "save_timestamp": "2025-07-08T13:27:43.416014",
+  "version": "1.0"
+}
