@@ -112,28 +112,9 @@ STYLESHEET = f"""
         font-weight: bold;
         spacing: 5px;
     }}
-    
-    QCheckBox::indicator {{
-        width: 16px;
-        height: 16px;
-        border: 2px solid {UP_GOLD};
-        border-radius: 3px;
-        background-color: {UP_WHITE};
-    }}
-    
-    QCheckBox::indicator:checked {{
-        background-color: {UP_FOREST_GREEN};
-        border-color: {UP_FOREST_GREEN};
-    }}
-    
-    QCheckBox::indicator:checked:hover {{
-        background-color: #1A5C40;
-    }}
-    
-    QCheckBox::indicator:hover {{
-        border-color: #1A5C40;
-    }}
-    
+
+
+
     /* --- Style for QLineEdit (text input fields) --- */
     QLineEdit {{
         background-color: {UP_WHITE};
