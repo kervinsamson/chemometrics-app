@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
     QSplitter, QGridLayout, QLabel, QHeaderView, QMessageBox,
-    QSpinBox, QTabWidget, QComboBox, QLineEdit, QTextEdit
+    QSpinBox, QTabWidget, QComboBox, QLineEdit, QTextEdit, QCheckBox
 )
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QTextOption
@@ -15,7 +15,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 
 # Import from the correct, separated logic and ui files
-from logic.processing import load_spectra_from_folder, train_pls_model, get_processed_intensity
+from logic.processing import load_spectra_from_folder, train_pls_model, get_processed_intensity, find_optimal_pls_components
 from logic.prediction_logic import predict_from_model
 from .stylesheet import UP_MAROON, UP_FOREST_GREEN, UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY
 
@@ -47,6 +47,10 @@ class SpectraViewer(QMainWindow):
         self.prediction_results = {}
         # --- END NEW ---
 
+        # --- NEW: State variable for auto PLS component selection ---
+        self.auto_pls_components = False
+        # --- END NEW ---
+
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
         self.calibration_tab = self._create_calibration_tab()
@@ -67,6 +71,12 @@ class SpectraViewer(QMainWindow):
         container = QWidget()
         layout = QVBoxLayout(container); layout.setContentsMargins(20, 20, 20, 20)
         title = QLabel("Define Chemical Components & Model Parameters"); title.setObjectName("TabTitle") # Changed Title
+        
+        # --- NEW: Add auto PLS component selection checkbox ---
+        self.auto_pls_checkbox = QCheckBox("Auto-select optimal PLS components")
+        self.auto_pls_checkbox.toggled.connect(self.toggle_auto_pls_components)
+        # --- END NEW ---
+        
         self.components_table = QTableWidget()
         # --- MODIFIED: Add columns for PLS components and CV folds ---
         self.components_table.setColumnCount(5)
@@ -80,7 +90,7 @@ class SpectraViewer(QMainWindow):
         self.btn_remove_component = QPushButton("Remove Selected Component")
         btn_layout.addWidget(self.btn_add_component); btn_layout.addWidget(self.btn_remove_component)
         btn_layout.addStretch()
-        layout.addWidget(title); layout.addWidget(self.components_table); layout.addLayout(btn_layout); layout.addStretch()
+        layout.addWidget(title); layout.addWidget(self.auto_pls_checkbox); layout.addWidget(self.components_table); layout.addLayout(btn_layout); layout.addStretch()
         self.btn_add_component.clicked.connect(self.add_component)
         self.btn_remove_component.clicked.connect(self.remove_component)
         self.components_table.itemChanged.connect(self.update_component_value)
@@ -335,6 +345,34 @@ class SpectraViewer(QMainWindow):
         self.prediction_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
     # --- END NEW ---
 
+    # --- NEW: Method to handle auto PLS component selection checkbox ---
+    @Slot()
+    def toggle_auto_pls_components(self):
+        self.auto_pls_components = self.auto_pls_checkbox.isChecked()
+        
+        # Update the table to show/hide PLS components column
+        for row in range(self.components_table.rowCount()):
+            item = self.components_table.item(row, 3)  # PLS Components column
+            if item:
+                if self.auto_pls_components:
+                    item.setText("Auto")
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Make it non-editable
+                else:
+                    # Restore the original value from the component dictionary
+                    if row < len(self.chemical_components):
+                        original_value = self.chemical_components[row].get('pls_components', 10)
+                        item.setText(str(original_value))
+                        item.setFlags(item.flags() | Qt.ItemIsEditable)  # Make it editable
+                        
+        # Update the appearance of the PLS Components column
+        header = self.components_table.horizontalHeader()
+        if self.auto_pls_components:
+            # Gray out the column header
+            header.setSectionResizeMode(3, QHeaderView.Stretch)
+        else:
+            header.setSectionResizeMode(3, QHeaderView.Interactive)
+    # --- END NEW ---
+
     # All component and data table update methods are unchanged
     @Slot(QTableWidgetItem)
     def update_component_value(self, item): # Unchanged
@@ -354,6 +392,14 @@ class SpectraViewer(QMainWindow):
         elif col == 2: comp_dict['unit'] = new_value
         # --- NEW: Handle updates for PLS Components and CV Folds ---
         elif col in [3, 4]:
+            # Skip PLS Components column if auto-selection is enabled
+            if col == 3 and self.auto_pls_components:
+                # Revert to "Auto" text
+                self.components_table.blockSignals(True)
+                item.setText("Auto")
+                self.components_table.blockSignals(False)
+                return
+                
             try:
                 val = int(new_value)
                 if col == 3:
@@ -388,7 +434,11 @@ class SpectraViewer(QMainWindow):
         self.components_table.setItem(row_count, 1, QTableWidgetItem(""))
         self.components_table.setItem(row_count, 2, QTableWidgetItem(""))
         # --- NEW: Set default values in the table ---
-        self.components_table.setItem(row_count, 3, QTableWidgetItem("10"))
+        pls_text = "Auto" if self.auto_pls_components else "10"
+        pls_item = QTableWidgetItem(pls_text)
+        if self.auto_pls_components:
+            pls_item.setFlags(pls_item.flags() & ~Qt.ItemIsEditable)  # Make it non-editable
+        self.components_table.setItem(row_count, 3, pls_item)
         self.components_table.setItem(row_count, 4, QTableWidgetItem("5"))
         # --- END NEW ---
         self.components_table.blockSignals(False); self._update_all_dynamic_widgets()
@@ -467,7 +517,10 @@ class SpectraViewer(QMainWindow):
         if component_name and component_name in self.model_performance:
             perf = self.model_performance[component_name]
             self.lbl_r2.setText(f"R² (CV): {perf['r2_cv']:.4f}")
-            self.lbl_rmse.setText(f"RMSECV: {perf['rmsecv']:.4f}")
+            # --- NEW: Show PLS components used ---
+            components_used = perf.get('pls_components', 'N/A')
+            self.lbl_rmse.setText(f"RMSECV: {perf['rmsecv']:.4f} ({components_used} comp.)")
+            # --- END NEW ---
         else:
             self.lbl_r2.setText("R² (CV): N/A")
             self.lbl_rmse.setText("RMSECV: N/A")
@@ -520,8 +573,31 @@ class SpectraViewer(QMainWindow):
 
         for component in self.chemical_components:
             target_component = component['name']
-            num_components = component['pls_components']
             cv_folds = component['cv_folds']
+            
+            # --- NEW: Handle auto PLS component selection ---
+            if self.auto_pls_components:
+                # Find optimal number of components
+                optimal_components, best_r2, auto_error = find_optimal_pls_components(
+                    self.spectra_data,
+                    target_component,
+                    self.current_derivative,
+                    self.wavenumbers,
+                    self.region_start,
+                    self.region_end,
+                    cv_folds
+                )
+                
+                if auto_error:
+                    error_messages.append(f"Could not find optimal components for '{target_component}':\n{auto_error}")
+                    continue
+                    
+                num_components = optimal_components
+                # Update the component dictionary with the found optimal value
+                component['pls_components'] = num_components
+            else:
+                num_components = component['pls_components']
+            # --- END NEW ---
 
             model, scaler, r2_cv, rmsecv, error = train_pls_model(
                 self.spectra_data,
@@ -538,13 +614,26 @@ class SpectraViewer(QMainWindow):
                 error_messages.append(f"Could not train model for '{target_component}':\n{error}")
             else:
                 self.pls_models[target_component] = {'model': model, 'scaler': scaler}
-                self.model_performance[target_component] = {'r2_cv': r2_cv, 'rmsecv': rmsecv}
+                # --- NEW: Store the number of components used for display ---
+                self.model_performance[target_component] = {
+                    'r2_cv': r2_cv, 
+                    'rmsecv': rmsecv,
+                    'pls_components': num_components
+                }
+                # --- END NEW ---
                 success_count += 1
         
         # --- Report summary of training ---
         summary_message = f"Training finished for {len(self.chemical_components)} component(s).\n\n"
         summary_message += f"Successfully trained: {success_count}\n"
-        summary_message += f"Failed: {len(error_messages)}"
+        summary_message += f"Failed: {len(error_messages)}\n\n"
+        
+        # --- NEW: Add info about auto-selection ---
+        if self.auto_pls_components:
+            summary_message += "Auto-selection of PLS components was used.\n"
+            if success_count > 0:
+                summary_message += "Check the performance display to see the optimal number of components found for each model."
+        # --- END NEW ---
 
         # --- MODIFIED: Use a custom resizable dialog for showing details ---
         msg_box = QMessageBox(self)

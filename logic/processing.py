@@ -135,3 +135,90 @@ def get_processed_intensity(original_intensity, derivative_order):
     elif derivative_order == 2:
         return savgol_filter(original_intensity, window_length, polyorder, deriv=2)
     return original_intensity
+
+def find_optimal_pls_components(spectra_data, target_component, current_derivative, wavenumbers, region_start=None, region_end=None, cv_folds=5, max_components=20):
+    """
+    Find the optimal number of PLS components by testing different values and selecting the one with best R² CV.
+    
+    Parameters:
+    - spectra_data: Dictionary containing spectral data
+    - target_component: Name of the component to predict
+    - current_derivative: Derivative order for preprocessing
+    - wavenumbers: Wavenumber axis for region selection
+    - region_start: Start of spectral region (optional)
+    - region_end: End of spectral region (optional)
+    - cv_folds: Number of cross-validation folds
+    - max_components: Maximum number of components to test
+    
+    Returns:
+    - optimal_components: Best number of components found
+    - best_r2: Best R² CV score achieved
+    - error_message: Error message if any, None otherwise
+    """
+    # Prepare data similar to train_pls_model
+    X_list, y_list = [], []
+    for data in spectra_data.values():
+        ref_val = data['refs'].get(target_component)
+        if ref_val is not None:
+            processed_intensity = get_processed_intensity(data['intensity'], current_derivative)
+            X_list.append(processed_intensity)
+            y_list.append(ref_val)
+
+    if len(X_list) < 5:
+        return None, None, f"Need at least 5 reference values for '{target_component}' to find optimal components."
+
+    # This is the full, unsliced data
+    X_full = np.array(X_list)
+    y = np.array(y_list)
+
+    # Slice the X data based on the selected region (if any)
+    if region_start is not None and region_end is not None and wavenumbers is not None:
+        start_wn = min(region_start, region_end)
+        end_wn = max(region_start, region_end)
+        region_mask = (wavenumbers >= start_wn) & (wavenumbers <= end_wn)
+        X = X_full[:, region_mask]
+        if X.shape[1] == 0:
+            return None, None, "The selected region contains no data points. Please check the values."
+    else:
+        X = X_full
+
+    # Calculate maximum allowable components
+    test_fold_size = -(-X.shape[0] // cv_folds)  # Ceiling division
+    max_components_samples = X.shape[0] - test_fold_size
+    max_components_features = X.shape[1]
+    max_allowed_components = min(max_components_samples, max_components_features, max_components)
+
+    if max_allowed_components < 1:
+        return None, None, "Not enough data to determine optimal components."
+
+    # Validate cv_folds
+    if cv_folds > X.shape[0]:
+        return None, None, f"CV folds ({cv_folds}) cannot be greater than number of samples ({X.shape[0]})."
+
+    # Test different numbers of components
+    best_r2 = -np.inf
+    optimal_components = 1
+    cv = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
+
+    for n_comp in range(1, max_allowed_components + 1):
+        try:
+            # Create pipeline with current number of components
+            pipeline = Pipeline([
+                ('scaler', StandardScaler()),
+                ('pls', PLSRegression(n_components=n_comp))
+            ])
+
+            # Get cross-validated predictions
+            y_cv_pred = cross_val_predict(pipeline, X, y, cv=cv)
+            r2_cv = r2_score(y, y_cv_pred)
+
+            # Update best if this is better
+            if r2_cv > best_r2:
+                best_r2 = r2_cv
+                optimal_components = n_comp
+
+        except Exception as e:
+            # Skip this component count if there's an error
+            continue
+
+    return optimal_components, best_r2, None

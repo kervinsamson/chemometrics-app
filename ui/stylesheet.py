@@ -106,6 +106,53 @@ STYLESHEET = f"""
     * This is the simplest and most robust solution.
     */
     
+    /* --- Style for the auto PLS component selection checkbox --- */
+    QCheckBox {{
+        color: {UP_DARK_GRAY};
+        font-weight: bold;
+        spacing: 5px;
+    }}
+    
+    QCheckBox::indicator {{
+        width: 16px;
+        height: 16px;
+        border: 2px solid {UP_GOLD};
+        border-radius: 3px;
+        background-color: {UP_WHITE};
+    }}
+    
+    QCheckBox::indicator:checked {{
+        background-color: {UP_FOREST_GREEN};
+        border-color: {UP_FOREST_GREEN};
+    }}
+    
+    QCheckBox::indicator:checked:hover {{
+        background-color: #1A5C40;
+    }}
+    
+    QCheckBox::indicator:hover {{
+        border-color: #1A5C40;
+    }}
+    
+    /* --- Style for QLineEdit (text input fields) --- */
+    QLineEdit {{
+        background-color: {UP_WHITE};
+        color: {UP_DARK_GRAY};
+        border: 2px solid {UP_GOLD};
+        border-radius: 5px;
+        padding: 5px;
+        font-weight: bold;
+        min-height: 24px;
+    }}
+    
+    QLineEdit:focus {{
+        border-color: {UP_FOREST_GREEN};
+    }}
+    
+    QLineEdit:hover {{
+        border-color: #1A5C40;
+    }}
+    
     /* --- Other --- */
     QSplitter::handle {{ background-color: {UP_LIGHT_GRAY}; }}
     QSplitter::handle:horizontal {{ width: 5px; }}
