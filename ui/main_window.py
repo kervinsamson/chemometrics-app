@@ -132,12 +132,10 @@ class SpectraViewer(QMainWindow):
         self.btn_load_complete_project = QPushButton("Load Complete Project")
         self.btn_save_reference_values = QPushButton("Save Reference Values")
         self.btn_load_reference_values = QPushButton("Load Reference Values")
-        self.btn_export_model = QPushButton("Export Model for Prediction")
         io_layout.addWidget(self.btn_save_complete_project, 0, 0)
         io_layout.addWidget(self.btn_load_complete_project, 0, 1)
         io_layout.addWidget(self.btn_save_reference_values, 1, 0)
         io_layout.addWidget(self.btn_load_reference_values, 1, 1)
-        io_layout.addWidget(self.btn_export_model, 2, 0, 1, 2)
         # --- END NEW ---
 
         # --- Region Selection / Zoom Controls (Unchanged) ---
@@ -169,10 +167,13 @@ class SpectraViewer(QMainWindow):
         self.component_selector_combo = QComboBox(); self.component_selector_combo.setObjectName("ComboBox")
         self.lbl_r2, self.lbl_rmse = QLabel("R² (CV): N/A"), QLabel("RMSECV: N/A")
         self.lbl_r2.setObjectName("PerfLabel"); self.lbl_rmse.setObjectName("PerfLabel")
+        # Add the export model button below the performance metrics
+        self.btn_export_model = QPushButton("Export Model for Prediction")
         perf_layout.addWidget(lbl_perf_comp, 0, 0)
         perf_layout.addWidget(self.component_selector_combo, 0, 1)
         perf_layout.addWidget(self.lbl_r2, 1, 0)
         perf_layout.addWidget(self.lbl_rmse, 1, 1)
+        perf_layout.addWidget(self.btn_export_model, 2, 0, 1, 2)  # Span across both columns
         # --- END MODIFIED ---
         
         # --- MODIFIED: Assemble the left panel with the new section ---
@@ -267,6 +268,26 @@ class SpectraViewer(QMainWindow):
         self.fig = Figure(figsize=(10, 7), dpi=100, facecolor=UP_LIGHT_GRAY)
         self.canvas = FigureCanvas(self.fig)
         self.ax = self.fig.add_subplot(111)
+        
+        # --- NEW: Style matplotlib to ensure readable hover tooltips ---
+        import matplotlib as mpl
+        mpl.rcParams['axes.edgecolor'] = UP_DARK_GRAY
+        mpl.rcParams['axes.labelcolor'] = UP_DARK_GRAY
+        mpl.rcParams['xtick.color'] = UP_DARK_GRAY
+        mpl.rcParams['ytick.color'] = UP_DARK_GRAY
+        mpl.rcParams['text.color'] = UP_DARK_GRAY
+        # Fix for tooltip/annotation text color - make tooltips dark text on light background
+        mpl.rcParams['figure.facecolor'] = UP_LIGHT_GRAY
+        mpl.rcParams['axes.facecolor'] = UP_WHITE
+        mpl.rcParams['savefig.facecolor'] = UP_LIGHT_GRAY
+        # Ensure tooltip text is dark and readable
+        mpl.rcParams['font.size'] = 10
+        mpl.rcParams['font.weight'] = 'normal'
+        # Fix tooltip background and text colors specifically
+        mpl.rcParams['patch.facecolor'] = UP_WHITE
+        mpl.rcParams['patch.edgecolor'] = UP_DARK_GRAY
+        # --- END NEW ---
+        
         self.btn_reset = QPushButton("Reset Plot")
         
         # --- NEW: Make derivative buttons checkable to show active state ---
@@ -1061,7 +1082,8 @@ class SpectraViewer(QMainWindow):
     
     # --- END NEW ---
 
-    def _style_matplotlib_toolbar(self): # Unchanged
+    def _style_matplotlib_toolbar(self): # Enhanced to fix coordinate display
+        # Style the toolbar icons
         icon_color = QColor(UP_DARK_GRAY)
         for action in self.toolbar.actions():
             if action.icon() and not action.icon().isNull():
@@ -1069,6 +1091,22 @@ class SpectraViewer(QMainWindow):
                 painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
                 painter.fillRect(pixmap.rect(), icon_color); painter.end()
                 action.setIcon(QIcon(pixmap))
+        
+        # Style the toolbar's coordinate display label to ensure readable text
+        self.toolbar.setStyleSheet(f"""
+            QToolBar {{
+                background-color: {UP_LIGHT_GRAY};
+                color: {UP_DARK_GRAY};
+                border: none;
+            }}
+            QLabel {{
+                color: {UP_DARK_GRAY};
+                background-color: {UP_WHITE};
+                padding: 2px 4px;
+                border-radius: 3px;
+                font-weight: bold;
+            }}
+        """)
 
     def apply_derivative(self, deriv_order):
         self.current_derivative = deriv_order

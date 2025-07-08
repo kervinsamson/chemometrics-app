@@ -84,7 +84,55 @@ STYLESHEET = f"""
         min-height: 24px;
     }}
 
-    QComboBox::drop-down {{ border: none; }}
+    QComboBox::drop-down {{ 
+        border: none; 
+        width: 20px;
+        subcontrol-origin: padding;
+        subcontrol-position: top right;
+        background-color: {UP_MEDIUM_GRAY};
+        border-left: 1px solid {UP_GOLD};
+        border-top-right-radius: 3px;
+        border-bottom-right-radius: 3px;
+    }}
+    
+    QComboBox::drop-down:hover {{
+        background-color: {UP_FOREST_GREEN};
+    }}
+    
+    /* Hide the arrow completely for a cleaner look */
+    QComboBox::down-arrow {{
+        image: none;
+        width: 0px;
+        height: 0px;
+        border: none;
+    }}
+    
+    /* Fix dropdown list items to be readable */
+    QComboBox QAbstractItemView {{
+        background-color: {UP_WHITE};
+        color: {UP_DARK_GRAY};
+        border: 2px solid {UP_GOLD};
+        selection-background-color: {UP_FOREST_GREEN};
+        selection-color: {UP_WHITE};
+        font-weight: bold;
+    }}
+    
+    QComboBox QAbstractItemView::item {{
+        background-color: {UP_WHITE};
+        color: {UP_DARK_GRAY};
+        padding: 8px;
+        border: none;
+    }}
+    
+    QComboBox QAbstractItemView::item:selected {{
+        background-color: {UP_FOREST_GREEN};
+        color: {UP_WHITE};
+    }}
+    
+    QComboBox QAbstractItemView::item:hover {{
+        background-color: {UP_LIGHT_GRAY};
+        color: {UP_DARK_GRAY};
+    }}
 
     /* --- THE FIX IS HERE: SIMPLIFIED BUTTON STYLING --- */
     
@@ -121,9 +169,43 @@ STYLESHEET = f"""
     
     /* --- Style for the auto PLS component selection checkbox --- */
     QCheckBox {{
+        spacing: 8px;
         color: {UP_DARK_GRAY};
         font-weight: bold;
-        spacing: 5px;
+        font-size: 10pt;
+    }}
+    
+    QCheckBox::indicator {{
+        width: 18px;
+        height: 18px;
+        border: 2px solid {UP_GOLD};
+        border-radius: 3px;
+        background-color: {UP_WHITE};
+    }}
+    
+    QCheckBox::indicator:hover {{
+        border-color: {UP_FOREST_GREEN};
+        background-color: {UP_LIGHT_GRAY};
+    }}
+    
+    QCheckBox::indicator:checked {{
+        background-color: {UP_FOREST_GREEN};
+        border-color: {UP_GOLD};
+    }}
+    
+    QCheckBox::indicator:checked:hover {{
+        background-color: #1A5C40;
+        border-color: {UP_GOLD};
+    }}
+    
+    QCheckBox::indicator:unchecked {{
+        background-color: {UP_WHITE};
+        border-color: {UP_GOLD};
+    }}
+    
+    QCheckBox::indicator:unchecked:hover {{
+        background-color: {UP_LIGHT_GRAY};
+        border-color: {UP_FOREST_GREEN};
     }}
 
 
@@ -153,6 +235,74 @@ STYLESHEET = f"""
     QToolBar {{ background-color: {UP_LIGHT_GRAY}; border: none; }}
     QToolButton:hover {{ background-color: {UP_MEDIUM_GRAY}; border-radius: 3px; }}
     QToolButton:checked {{ background-color: {UP_FOREST_GREEN}; border-radius: 3px; }}
+
+    /* --- Custom Scrollbar Styling --- */
+    QScrollBar:vertical {{
+        background-color: {UP_LIGHT_GRAY};
+        width: 14px;
+        margin: 0px;
+        border: none;
+        border-radius: 7px;
+    }}
+    
+    QScrollBar::handle:vertical {{
+        background-color: {UP_FOREST_GREEN};
+        min-height: 30px;
+        border-radius: 7px;
+        margin: 2px;
+    }}
+    
+    QScrollBar::handle:vertical:hover {{
+        background-color: #1A5C40;
+    }}
+    
+    QScrollBar::handle:vertical:pressed {{
+        background-color: #0E3827;
+    }}
+    
+    /* Hide the arrow buttons completely for a cleaner look */
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+        height: 0px;
+        subcontrol-origin: margin;
+    }}
+    
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+        background: none;
+    }}
+    
+    /* Horizontal scrollbar */
+    QScrollBar:horizontal {{
+        background-color: {UP_LIGHT_GRAY};
+        height: 14px;
+        margin: 0px;
+        border: none;
+        border-radius: 7px;
+    }}
+    
+    QScrollBar::handle:horizontal {{
+        background-color: {UP_FOREST_GREEN};
+        min-width: 30px;
+        border-radius: 7px;
+        margin: 2px;
+    }}
+    
+    QScrollBar::handle:horizontal:hover {{
+        background-color: #1A5C40;
+    }}
+    
+    QScrollBar::handle:horizontal:pressed {{
+        background-color: #0E3827;
+    }}
+    
+    /* Hide the arrow buttons completely for a cleaner look */
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+        width: 0px;
+        subcontrol-origin: margin;
+    }}
+    
+    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+        background: none;
+    }}
 
     /* --- QMessageBox Styling --- */
     QMessageBox {{
