@@ -53,7 +53,7 @@ def test_save_load_functionality():
     success, message = save_complete_project(
         mock_spectra_data, mock_components, mock_pls_models, 
         mock_performance, mock_wavenumbers, 1, 3000, 2000, 
-        'test_complete_project.chemom'
+        'test_complete_project.pkl'
     )
     
     if success:
@@ -66,7 +66,7 @@ def test_save_load_functionality():
     
     # Test complete project load
     print("\n2. Testing complete project load...")
-    project_data, message = load_complete_project('test_complete_project.chemom')
+    project_data, message = load_complete_project('test_complete_project.pkl')
     
     if project_data:
         print("✓ Complete project load successful")
@@ -109,7 +109,7 @@ def test_save_load_functionality():
     # Cleanup
     print("\n5. Cleaning up test files...")
     try:
-        os.remove('test_complete_project.chemom')
+        os.remove('test_complete_project.pkl')
         os.remove('test_reference_values.json')
         print("✓ Test files cleaned up")
     except:

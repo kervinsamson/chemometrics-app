@@ -6,7 +6,7 @@ def predict_from_model(prediction_model_data, prediction_spectra_data):
     Predicts component values for new spectra using a trained PLS model.
 
     Args:
-        prediction_model_data (dict): The loaded .chemom model data.
+        prediction_model_data (dict): The loaded .pkl model data.
         prediction_spectra_data (dict): The new spectra data to predict.
 
     Returns:

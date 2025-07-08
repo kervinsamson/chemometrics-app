@@ -217,7 +217,7 @@ class SpectraViewer(QMainWindow):
 
         # Model Loading Section
         model_layout = QVBoxLayout()
-        self.btn_load_pred_model = QPushButton("1. Load Model (.chemom)")
+        self.btn_load_pred_model = QPushButton("1. Load Model (.pkl)")
         self.lbl_loaded_model = QLabel("No model loaded."); self.lbl_loaded_model.setObjectName("PerfLabel")
         model_layout.addWidget(self.btn_load_pred_model)
         model_layout.addWidget(self.lbl_loaded_model)
@@ -285,7 +285,7 @@ class SpectraViewer(QMainWindow):
     @Slot()
     def load_prediction_model(self):
         filePath, _ = QFileDialog.getOpenFileName(
-            self, "Load Prediction Model", "", "Chemometrics Models (*.chemom);;All Files (*)"
+            self, "Load Prediction Model", "", "Pickle Models (*.pkl);;All Files (*)"
         )
         if not filePath:
             return
@@ -350,7 +350,7 @@ class SpectraViewer(QMainWindow):
     @Slot()
     def run_prediction(self):
         if self.prediction_model is None:
-            QMessageBox.warning(self, "Missing Model", "Please load a .chemom model first.")
+            QMessageBox.warning(self, "Missing Model", "Please load a .pkl model first.")
             return
         if not self.prediction_spectra:
             QMessageBox.warning(self, "Missing Spectra", "Please load spectra to predict.")
@@ -790,11 +790,11 @@ class SpectraViewer(QMainWindow):
         
         # Propose a filename based on the first component, for convenience
         first_comp = self.chemical_components[0]['name'] if self.chemical_components else "project"
-        default_filename = f"{first_comp.replace(' ', '_')}_complete_project.chemom"
+        default_filename = f"{first_comp.replace(' ', '_')}_complete_project.pkl"
         
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Save Complete Project", default_filename,
-            "Chemometrics Complete Project (*.chemom);;All Files (*)"
+            "Pickle Complete Project (*.pkl);;All Files (*)"
         )
         
         if not file_path:
@@ -816,7 +816,7 @@ class SpectraViewer(QMainWindow):
         """Load complete project including spectral data, models, and all settings"""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Load Complete Project", "",
-            "Chemometrics Complete Project (*.chemom);;All Files (*)"
+            "Pickle Complete Project (*.pkl);;All Files (*)"
         )
         
         if not file_path:
@@ -983,11 +983,11 @@ class SpectraViewer(QMainWindow):
         
         # Propose a filename based on the first component, for convenience
         first_comp = self.chemical_components[0]['name'] if self.chemical_components else "model"
-        default_filename = f"{first_comp.replace(' ', '_')}_prediction_model.chemom"
+        default_filename = f"{first_comp.replace(' ', '_')}_prediction_model.pkl"
         
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Export Model for Prediction", default_filename,
-            "Chemometrics Model (*.chemom);;All Files (*)"
+            "Pickle Model (*.pkl);;All Files (*)"
         )
         
         if not file_path:
