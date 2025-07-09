@@ -5,10 +5,12 @@ UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY, UP_MEDIUM_GRAY = "#FFFFFF", "#F0F0F0", "#
 STYLESHEET = f"""
     /* --- General and Tab Styling --- */
     QMainWindow, QWidget {{ background-color: {UP_LIGHT_GRAY}; font-family: Segoe UI, Arial, sans-serif; }}
-    QTabWidget::pane {{ border: none; }}
+    QTabWidget {{ margin: 0px; padding: 0px; }}
+    QTabWidget::pane {{ border: none; margin: 0px; padding: 0px; }}
+    QTabBar {{ margin: 0px; padding: 0px; }}
     QTabBar::tab {{
         background: {UP_MEDIUM_GRAY}; color: {UP_DARK_GRAY}; padding: 10px;
-        font-weight: bold; border-top-left-radius: 5px; border-top-right-radius: 5px;
+        font-weight: bold;
         min-width: 100px; margin-right: 2px;
     }}
     QTabBar::tab:selected {{
@@ -17,7 +19,11 @@ STYLESHEET = f"""
     #TabTitle {{ font-size: 14pt; color: {UP_DARK_GRAY}; font-weight: bold; padding-bottom: 10px; }}
 
     /* --- Panel Styling --- */
-    #ControlPanel {{ background-color: {UP_MAROON}; border-radius: 5px; }}
+    #ControlPanel {{ 
+        background-color: {UP_MAROON}; 
+        min-width: 371px;
+        margin-left: -12px;
+    }}
     #PanelHeaderLabel {{
         background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; font-size: 10pt; font-weight: bold;
         padding: 8px; border-radius: 5px; qproperty-alignment: 'AlignCenter';
@@ -230,8 +236,21 @@ STYLESHEET = f"""
     }}
     
     /* --- Other --- */
-    QSplitter::handle {{ background-color: {UP_LIGHT_GRAY}; }}
-    QSplitter::handle:horizontal {{ width: 5px; }}
+    QSplitter::handle {{ 
+        background-color: {UP_LIGHT_GRAY}; 
+        border: none;
+    }}
+    QSplitter::handle:horizontal {{ 
+        width: 6px; 
+        background-color: {UP_MEDIUM_GRAY};
+        border-left: 1px solid {UP_MEDIUM_GRAY};
+        border-right: 1px solid {UP_MEDIUM_GRAY};
+    }}
+    QSplitter::handle:horizontal:hover {{ 
+        background-color: {UP_FOREST_GREEN}; 
+        border-left: 1px solid {UP_GOLD};
+        border-right: 1px solid {UP_GOLD};
+    }}
     QToolBar {{ background-color: {UP_LIGHT_GRAY}; border: none; }}
     QToolButton:hover {{ background-color: {UP_MEDIUM_GRAY}; border-radius: 3px; }}
     QToolButton:checked {{ background-color: {UP_FOREST_GREEN}; border-radius: 3px; }}
