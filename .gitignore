@@ -1,2 +1,48 @@
-spa_data/*
-dist/*
+# ------------------------------
+# Ignore data folder (raw or large data files)
+spa_data/
+
+# ------------------------------
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ------------------------------
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# ------------------------------
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# ------------------------------
+# PyInstaller
+*.spec
+
+# ------------------------------
+# Installer outputs and scripts
+output/
+*.exe
+*.iss
+*.wxs
+*.ps1
+
+# ------------------------------
+# IDE settings and project files
+.vscode/
+.idea/
+
+# ------------------------------
+# Logs, databases, and OS files
+*.log
+*.sqlite3
+.DS_Store
+Thumbs.db
