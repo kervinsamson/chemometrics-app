@@ -1101,7 +1101,7 @@ class SpectraViewer(QMainWindow):
             }}
             QLabel {{
                 color: {UP_DARK_GRAY};
-                background-color: {UP_WHITE};
+                background-color: {UP_LIGHT_GRAY};
                 padding: 2px 4px;
                 border-radius: 3px;
                 font-weight: bold;
