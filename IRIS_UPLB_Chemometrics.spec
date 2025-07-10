@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('spa_data', 'spa_data'), ('Cassava (HCN)', 'Cassava (HCN)'), ('Spectral data', 'Spectral data'), ('RICE_NITROGEN_PROJECT.pkl', '.')]
+datas = []
 binaries = []
 hiddenimports = ['lazy_loader', 'scipy', 'scipy.signal', 'scipy.linalg', 'scipy.sparse', 'scipy.spatial', 'scipy.stats', 'scipy.optimize', 'scipy.interpolate', 'sklearn', 'sklearn.cross_decomposition', 'sklearn.preprocessing', 'sklearn.model_selection', 'sklearn.metrics', 'sklearn.pipeline', 'sklearn.decomposition', 'sklearn.linear_model', 'sklearn.ensemble', 'joblib', 'numpy', 'pandas', 'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends', 'matplotlib.backends.backend_qtagg', 'matplotlib.backends.backend_qt5agg', 'matplotlib.backends.backend_agg', 'PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui', 'importlib_metadata', 'packaging', 'importlib.util', 'importlib.machinery', 'types']
 tmp_ret = collect_all('spectrochempy')
