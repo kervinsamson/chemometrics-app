@@ -31,9 +31,9 @@ dist/
 # Installer outputs and scripts
 output/
 *.exe
-*.iss
-*.wxs
-*.ps1
+# *.iss
+# *.wxs
+# *.ps1
 
 # ------------------------------
 # IDE settings and project files
