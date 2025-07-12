@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
     QSplitter, QGridLayout, QLabel, QHeaderView, QMessageBox,
-    QSpinBox, QTabWidget, QComboBox, QLineEdit, QTextEdit, QCheckBox
+    QSpinBox, QTabWidget, QComboBox, QLineEdit, QTextEdit, QCheckBox, QSizePolicy
 )
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QTextOption
@@ -15,7 +15,11 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 
-# Import from the correct, separated logic and ui files
+
+# -----------------------------------------------------------------------------
+# Import application logic and styling modules
+# -----------------------------------------------------------------------------
+# These imports bring in the core data processing, prediction, and UI styling logic.
 from logic.processing import (
     load_spectra_from_folder, load_selected_spa_files, train_pls_model, get_processed_intensity, find_optimal_pls_components,
     save_complete_project, load_complete_project, save_reference_values_only, load_reference_values_only,
@@ -24,53 +28,54 @@ from logic.processing import (
 from logic.prediction_logic import predict_from_model
 from .stylesheet import UP_MAROON, UP_FOREST_GREEN, UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY, STYLESHEET
 
+
+# -----------------------------------------------------------------------------
+# Main Application Window: SpectraViewer
+# -----------------------------------------------------------------------------
+# This class implements the main window for the IRIS-UPLB Chemometrics application.
+# It provides the user interface for calibration, component management, and prediction workflows.
 class SpectraViewer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("IRIS - UPLB-IPB")
         self.setGeometry(100, 100, 1600, 900)
 
-        self.spectra_data = {}
-        self.chemical_components = []
-        self.pls_models = {}
-        self.current_derivative = 0
-        self.legend_visible = True
+        # --- Application State Variables ---
+        self.spectra_data = {}  # Loaded spectral data
+        self.chemical_components = []  # List of chemical components
+        self.pls_models = {}  # Trained PLS models
+        self.current_derivative = 0  # Current derivative order for display
+        self.legend_visible = True  # Whether the plot legend is visible
         self.current_folder_path = None  # Store current folder path for reference
 
-        # --- NEW: State variables for model performance ---
-        self.model_performance = {} # Stores {comp_name: {'r2_cv': 0.99, 'rmsecv': 0.1}}
-        # --- END NEW ---
+        # Model performance metrics: {comp_name: {'r2_cv': float, 'rmsecv': float}}
+        self.model_performance = {}
 
-        # --- NEW: State variables for region selection ---
+        # Region selection state
         self.wavenumbers = None
         self.region_start = None
         self.region_end = None
-        # --- END NEW ---
 
-        # --- NEW: State variables for prediction tab ---
+        # Prediction tab state
         self.prediction_model = None
         self.prediction_spectra = {}
         self.prediction_results = {}
-        # --- END NEW ---
 
-        # --- NEW: State variable for auto PLS component selection ---
+        # Auto PLS component selection flag
         self.auto_pls_components = False
-        # --- END NEW ---
 
+        # --- UI Setup ---
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
         self.calibration_tab = self._create_calibration_tab()
         self.components_tab = self._create_components_tab()
-        # --- NEW: Create and add the Prediction tab ---
         self.prediction_tab = self._create_prediction_tab()
         self.tabs.addTab(self.calibration_tab, "Calibration")
         self.tabs.addTab(self.components_tab, "Components")
         self.tabs.addTab(self.prediction_tab, "Prediction")
-        # --- END NEW ---
 
-        # --- NEW: Connect component selector change to performance display update ---
+        # Connect component selector change to performance display update
         self.component_selector_combo.currentIndexChanged.connect(self.update_performance_display)
-        # --- END NEW ---
 
     def _create_components_tab(self):
         # This method is unchanged
@@ -158,6 +163,8 @@ class SpectraViewer(QMainWindow):
 
         table_header_label = QLabel("Calibration Data"); table_header_label.setObjectName("PanelHeaderLabel")
         self.data_table = QTableWidget(); self.data_table.itemChanged.connect(self.update_reference_value)
+        # Set size policy to allow vertical resizing
+        self.data_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # --- MODIFIED: Performance display now linked to the component selector ---
         perf_label = QLabel("Model Performance"); perf_label.setObjectName("PanelHeaderLabel")

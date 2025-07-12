@@ -12,10 +12,19 @@ from sklearn.cross_decomposition import PLSRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
 
+
 def load_spectra_from_folder(folder_path):
     """
-    --- CHANGED ---
-    Now returns both the spectra data and the wavenumber axis from the first file.
+    Load all .spa spectral files from a specified folder.
+    Returns both the spectra data and the wavenumber axis from the first valid file.
+
+    Args:
+        folder_path (str): Path to the folder containing .spa files.
+
+    Returns:
+        tuple: (spectra_data, wavenumbers)
+            - spectra_data (dict): Dictionary of spectra keyed by filename.
+            - wavenumbers (np.ndarray): Wavenumber axis from the first valid file.
     """
     spectra_data = {}
     wavenumbers = None  # Initialize wavenumbers as None
@@ -23,35 +32,35 @@ def load_spectra_from_folder(folder_path):
         filename = os.path.basename(file_path)
         try:
             nd = spc.read_spa(file_path)
-            # --- NEW: Capture the wavenumber axis from the first valid file ---
+            # Capture the wavenumber axis from the first valid file
             if wavenumbers is None:
                 wavenumbers = nd.x.data
-            # --- END NEW ---
             spectra_data[filename] = {'nd': nd, 'intensity': nd.data.squeeze(), 'refs': {}}
         except Exception as e:
             print(f"Error loading {filename}: {e}")
-    
     # Return both the data and the common x-axis
     return spectra_data, wavenumbers
 
+
 def load_selected_spa_files(file_paths):
     """
-    Load specific selected .spa files instead of entire folders.
-    
-    Parameters:
-    - file_paths: List of absolute paths to .spa files
-    
+    Load specific selected .spa files instead of an entire folder.
+
+    Args:
+        file_paths (list): List of absolute paths to .spa files.
+
     Returns:
-    - spectra_data: Dictionary containing spectral data
-    - wavenumbers: Common wavenumber axis from the first file
+        tuple: (spectra_data, wavenumbers)
+            - spectra_data (dict): Dictionary containing spectral data keyed by filename.
+            - wavenumbers (np.ndarray): Common wavenumber axis from the first valid file.
     """
     spectra_data = {}
     wavenumbers = None
-    
+
     for file_path in file_paths:
         if not file_path.lower().endswith('.spa'):
             continue
-            
+
         filename = os.path.basename(file_path)
         try:
             nd = spc.read_spa(file_path)

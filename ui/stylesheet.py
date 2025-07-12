@@ -1,7 +1,16 @@
-# --- UP Visual Identity Color Palette ---
+# -----------------------------------------------------------------------------
+# UP Visual Identity Color Palette
+# -----------------------------------------------------------------------------
+# These constants define the official color palette for the University of the Philippines (UP) brand.
+# They are used throughout the application to ensure a consistent and professional visual identity.
 UP_MAROON, UP_FOREST_GREEN, UP_GOLD = "#8A1538", "#134633", "#FFB81C"
 UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY, UP_MEDIUM_GRAY = "#FFFFFF", "#F0F0F0", "#333333", "#C0C0C0"
 
+# -----------------------------------------------------------------------------
+# Application-wide Qt Stylesheet
+# -----------------------------------------------------------------------------
+# This stylesheet applies the UP color palette and customizes the appearance of all widgets.
+# It is injected into the QApplication at startup for a unified look and feel.
 STYLESHEET = f"""
     /* --- General and Tab Styling --- */
     QMainWindow, QWidget {{ background-color: {UP_LIGHT_GRAY}; font-family: Segoe UI, Arial, sans-serif; }}
@@ -42,7 +51,7 @@ STYLESHEET = f"""
     QPushButton:hover {{ background-color: #1A5C40; }}
     QPushButton:pressed {{ background-color: #0E3827; }}
     
-    /* --- NEW: Styling for checkable buttons (derivative buttons) --- */
+    /* --- Styling for checkable buttons (e.g., derivative buttons) --- */
     QPushButton:checked {{
         background-color: {UP_GOLD}; 
         color: {UP_DARK_GRAY}; 
@@ -52,12 +61,19 @@ STYLESHEET = f"""
     QPushButton:checked:hover {{
         background-color: #E6A519; /* Slightly darker gold on hover */
     }}
-    /* --- END NEW --- */
+    /* --- End checkable button styling --- */
     
     #PerfLabel {{ color: {UP_WHITE}; font-size: 10pt; font-weight: bold; background-color: transparent; }}
     
     /* --- Table Styling --- */
-    QTableWidget {{ background-color: {UP_WHITE}; color: {UP_DARK_GRAY}; border: none; gridline-color: {UP_LIGHT_GRAY}; }}
+    QTableWidget {{ 
+        background-color: {UP_WHITE}; 
+        color: {UP_DARK_GRAY}; 
+        border: none; 
+        gridline-color: {UP_LIGHT_GRAY}; 
+        min-height: 200px;
+        max-height: 800px;
+    }}
     QTableWidget::item:selected {{ background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; }}
     
     /* --- FIX for unreadable text during editing --- */

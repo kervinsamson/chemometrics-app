@@ -1,31 +1,33 @@
 import numpy as np
 from .processing import get_processed_intensity
 
+
 def predict_from_model(prediction_model_data, prediction_spectra_data):
     """
-    Predicts component values for new spectra using a trained PLS model.
+    Predict component values for new spectra using a trained PLS model.
 
     Args:
-        prediction_model_data (dict): The loaded .pkl model data.
-        prediction_spectra_data (dict): The new spectra data to predict.
+        prediction_model_data (dict): The loaded .pkl model data containing model parameters and settings.
+        prediction_spectra_data (dict): The new spectra data to predict, keyed by filename.
 
     Returns:
-        dict: A dictionary where keys are filenames and values are dicts of predicted component values.
-        str: An error message, if any.
+        tuple:
+            - dict: A dictionary where keys are filenames and values are dicts of predicted component values.
+            - str: An error message, if any.
     """
     try:
-        # Get processing settings from the loaded model
+        # Retrieve processing settings from the loaded model
         settings = prediction_model_data['processing_settings']
         derivative_order = settings.get('derivative_order', 0)
         region_start = settings.get('region_start')
         region_end = settings.get('region_end')
         model_wavenumbers = prediction_model_data['wavenumbers']
-        
-        # Convert wavenumbers to numpy array if it's a list
+
+        # Convert wavenumbers to numpy array if necessary
         if isinstance(model_wavenumbers, list):
             model_wavenumbers = np.array(model_wavenumbers)
 
-        # Get components and models
+        # Retrieve components and models
         pls_models = prediction_model_data['pls_models']
         component_names = [comp['name'] for comp in prediction_model_data['chemical_components']]
 
@@ -43,7 +45,7 @@ def predict_from_model(prediction_model_data, prediction_spectra_data):
             spectrum_data = prediction_spectra_data[filename]
             original_intensity = spectrum_data['intensity']
 
-            # 1. Apply same preprocessing as the model
+            # 1. Apply the same preprocessing as the model
             processed_intensity = get_processed_intensity(original_intensity, derivative_order)
 
             # 2. Apply region mask if it exists
