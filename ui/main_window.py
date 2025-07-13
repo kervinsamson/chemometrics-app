@@ -1,5 +1,6 @@
 import sys
 import os
+import csv
 import joblib
 from datetime import datetime
 from PySide6.QtWidgets import (
@@ -161,7 +162,15 @@ class SpectraViewer(QMainWindow):
         region_layout.addWidget(self.btn_apply_region, 2, 0); region_layout.addWidget(self.btn_reset_region, 2, 1)
         # --- END NEW ---
 
+        # --- MODIFIED: Calibration Data header with Export CSV button ---
+        table_header_layout = QHBoxLayout()
         table_header_label = QLabel("Calibration Data"); table_header_label.setObjectName("PanelHeaderLabel")
+        self.btn_export_calibration_csv = QPushButton("Export CSV")
+        self.btn_export_calibration_csv.setMaximumWidth(100)
+        table_header_layout.addWidget(table_header_label)
+        table_header_layout.addStretch()
+        table_header_layout.addWidget(self.btn_export_calibration_csv)
+        
         self.data_table = QTableWidget(); self.data_table.itemChanged.connect(self.update_reference_value)
         # Set size policy to allow vertical resizing
         self.data_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -189,7 +198,7 @@ class SpectraViewer(QMainWindow):
         lp_layout.addLayout(io_layout)
         lp_layout.addWidget(region_header_label)
         lp_layout.addLayout(region_layout)
-        lp_layout.addWidget(table_header_label)
+        lp_layout.addLayout(table_header_layout)
         lp_layout.addWidget(self.data_table)
         lp_layout.addWidget(perf_label)
         lp_layout.addLayout(perf_layout)
@@ -204,6 +213,7 @@ class SpectraViewer(QMainWindow):
         self.btn_export_model.clicked.connect(self.export_model_for_prediction)
         self.btn_apply_region.clicked.connect(self.apply_region)
         self.btn_reset_region.clicked.connect(self.reset_region_view)
+        self.btn_export_calibration_csv.clicked.connect(self.export_calibration_csv)
         
         right_panel = self._create_plot_panel()
         main_splitter.addWidget(left_panel)
@@ -251,11 +261,20 @@ class SpectraViewer(QMainWindow):
         results_panel = QWidget()
         results_panel.setObjectName("ResultsPanel") # NEW: Add object name
         rp_layout = QVBoxLayout(results_panel)
+        
+        # --- MODIFIED: Results header with Export CSV button ---
+        results_header_layout = QHBoxLayout()
         results_title = QLabel("Prediction Results"); results_title.setObjectName("PanelHeaderLabel")
+        self.btn_export_prediction_csv = QPushButton("Export CSV")
+        self.btn_export_prediction_csv.setMaximumWidth(100)
+        results_header_layout.addWidget(results_title)
+        results_header_layout.addStretch()
+        results_header_layout.addWidget(self.btn_export_prediction_csv)
+        
         self.prediction_table = QTableWidget()
         self.prediction_table.setObjectName("PredictionTable") # Add object name for specific styling
         self.prediction_table.setEditTriggers(QTableWidget.NoEditTriggers) # Make table read-only
-        rp_layout.addWidget(results_title)
+        rp_layout.addLayout(results_header_layout)
         rp_layout.addWidget(self.prediction_table)
 
         layout.addWidget(control_panel, 1) # 1/3 of the space
@@ -265,6 +284,7 @@ class SpectraViewer(QMainWindow):
         self.btn_load_pred_model.clicked.connect(self.load_prediction_model)
         self.btn_load_pred_spectra.clicked.connect(self.load_prediction_spectra)
         self.btn_run_prediction.clicked.connect(self.run_prediction)
+        self.btn_export_prediction_csv.clicked.connect(self.export_prediction_csv)
 
         return main_widget
     # --- END NEW ---
@@ -1166,3 +1186,140 @@ class SpectraViewer(QMainWindow):
     def toggle_legend(self): # Unchanged
         self.legend_visible = not self.legend_visible
         self.plot_spectra()
+
+    # --- NEW: CSV Export Methods ---
+    @Slot()
+    def export_calibration_csv(self):
+        """Export calibration data reference values to CSV"""
+        if not self.spectra_data:
+            QMessageBox.warning(self, "Warning", "No spectral data loaded. Please load spectra first.")
+            return
+        
+        # Check if there are any reference values to export
+        has_refs = any(data['refs'] for data in self.spectra_data.values())
+        if not has_refs:
+            QMessageBox.warning(self, "Warning", "No reference values entered. Please enter some reference values first.")
+            return
+        
+        # Propose a filename
+        first_comp = self.chemical_components[0]['name'] if self.chemical_components else "calibration"
+        default_filename = f"{first_comp.replace(' ', '_')}_calibration_data.csv"
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Calibration Data to CSV", default_filename,
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Write header
+                header = ['Filename']
+                for comp in self.chemical_components:
+                    unit_str = f" ({comp['unit']})" if comp.get('unit') else ""
+                    header.append(f"{comp['name']}{unit_str}")
+                writer.writerow(header)
+                
+                # Write data rows
+                sorted_filenames = sorted(self.spectra_data.keys())
+                for filename in sorted_filenames:
+                    row = [filename]
+                    for comp in self.chemical_components:
+                        ref_value = self.spectra_data[filename]['refs'].get(comp['name'])
+                        if ref_value is not None:
+                            row.append(f"{ref_value:.4f}")
+                        else:
+                            row.append("")
+                    writer.writerow(row)
+            
+            # Count statistics
+            total_spectra = len(self.spectra_data)
+            spectra_with_refs = sum(1 for data in self.spectra_data.values() if data['refs'])
+            total_values = sum(len([v for v in data['refs'].values() if v is not None]) 
+                             for data in self.spectra_data.values())
+            
+            QMessageBox.information(
+                self, "Export Successful", 
+                f"Calibration data exported successfully!\n\n"
+                f"• {total_spectra} spectra\n"
+                f"• {spectra_with_refs} spectra with reference values\n"
+                f"• {total_values} reference values\n"
+                f"• {len(self.chemical_components)} components\n"
+                f"• Saved to: {file_path}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export calibration data: {str(e)}")
+
+    @Slot()
+    def export_prediction_csv(self):
+        """Export prediction results to CSV"""
+        if not self.prediction_results:
+            QMessageBox.warning(self, "Warning", "No prediction results available. Please run prediction first.")
+            return
+        
+        # Get component info from the loaded model
+        if not self.prediction_model:
+            QMessageBox.warning(self, "Warning", "No prediction model loaded.")
+            return
+        
+        comp_info = self.prediction_model.get('chemical_components', [])
+        
+        # Propose a filename
+        default_filename = "prediction_results.csv"
+        if comp_info:
+            first_comp = comp_info[0]['name']
+            default_filename = f"{first_comp.replace(' ', '_')}_prediction_results.csv"
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Prediction Results to CSV", default_filename,
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Write header
+                header = ['Filename']
+                for comp in comp_info:
+                    unit_str = f" ({comp['unit']})" if comp.get('unit') else ""
+                    header.append(f"{comp['name']}{unit_str}")
+                writer.writerow(header)
+                
+                # Write data rows
+                sorted_filenames = sorted(self.prediction_results.keys())
+                for filename in sorted_filenames:
+                    row = [filename]
+                    for comp in comp_info:
+                        comp_name = comp['name']
+                        predicted_value = self.prediction_results[filename].get(comp_name, 'N/A')
+                        if isinstance(predicted_value, (int, float)):
+                            row.append(f"{predicted_value:.4f}")
+                        else:
+                            row.append(str(predicted_value))
+                    writer.writerow(row)
+            
+            # Count statistics
+            total_spectra = len(self.prediction_results)
+            total_predictions = sum(len(results) for results in self.prediction_results.values())
+            
+            QMessageBox.information(
+                self, "Export Successful", 
+                f"Prediction results exported successfully!\n\n"
+                f"• {total_spectra} spectra\n"
+                f"• {total_predictions} predictions\n"
+                f"• {len(comp_info)} components\n"
+                f"• Saved to: {file_path}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export prediction results: {str(e)}")
+    # --- END NEW ---
