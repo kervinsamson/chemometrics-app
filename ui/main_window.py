@@ -23,8 +23,8 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 # These imports bring in the core data processing, prediction, and UI styling logic.
 from logic.processing import (
     load_spectra_from_folder, load_selected_spa_files, train_pls_model, get_processed_intensity, find_optimal_pls_components,
-    save_complete_project, load_complete_project, save_reference_values_only, load_reference_values_only,
-    apply_loaded_reference_values, reconstruct_spectra_data
+    save_complete_project, load_complete_project, reconstruct_spectra_data,
+    load_csv_spectral_data, load_csv_folder_spectral_data, export_spa_to_csv_individual, export_spa_to_csv_combined
 )
 from logic.prediction_logic import predict_from_model
 from .stylesheet import UP_MAROON, UP_FOREST_GREEN, UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY, STYLESHEET
@@ -128,7 +128,7 @@ class SpectraViewer(QMainWindow):
         
         # --- MODIFIED: Simplified Training Controls ---
         train_layout = QGridLayout(); train_layout.setSpacing(6)
-        self.btn_load_folder = QPushButton("1. Load .spa Files (Folder or Individual)")
+        self.btn_load_folder = QPushButton("1. Load Spectra (.spa or .csv)")
         lbl_step2 = QLabel("2. Enter Reference Values in Table"); lbl_step2.setObjectName("PerfLabel")
         lbl_step3 = QLabel("3. Define Components in 'Components' Tab"); lbl_step3.setObjectName("PerfLabel")
         self.btn_train_pls = QPushButton("4. Train All Models") # Changed text and step number
@@ -144,12 +144,8 @@ class SpectraViewer(QMainWindow):
         io_layout = QGridLayout(); io_layout.setSpacing(6)
         self.btn_save_complete_project = QPushButton("Save Complete Project")
         self.btn_load_complete_project = QPushButton("Load Complete Project")
-        self.btn_save_reference_values = QPushButton("Save Reference Values")
-        self.btn_load_reference_values = QPushButton("Load Reference Values")
         io_layout.addWidget(self.btn_save_complete_project, 0, 0)
         io_layout.addWidget(self.btn_load_complete_project, 0, 1)
-        io_layout.addWidget(self.btn_save_reference_values, 1, 0)
-        io_layout.addWidget(self.btn_load_reference_values, 1, 1)
         # --- END NEW ---
 
         # --- Region Selection / Zoom Controls (Unchanged) ---
@@ -170,14 +166,16 @@ class SpectraViewer(QMainWindow):
         region_layout.addWidget(self.btn_apply_region, 2, 0); region_layout.addWidget(self.btn_reset_region, 2, 1)
         # --- END NEW ---
 
-        # --- MODIFIED: Calibration Data header with Export CSV button ---
-        table_header_layout = QHBoxLayout()
+        # --- MODIFIED: Calibration Data header (simplified) ---
         table_header_label = QLabel("Calibration Data"); table_header_label.setObjectName("PanelHeaderLabel")
+        
+        # --- NEW: Calibration Data CSV Import/Export buttons ---
+        csv_layout = QGridLayout(); csv_layout.setSpacing(6)
+        self.btn_import_calibration_csv = QPushButton("Import CSV")
         self.btn_export_calibration_csv = QPushButton("Export CSV")
-        self.btn_export_calibration_csv.setMaximumWidth(100)
-        table_header_layout.addWidget(table_header_label)
-        table_header_layout.addStretch()
-        table_header_layout.addWidget(self.btn_export_calibration_csv)
+        csv_layout.addWidget(self.btn_import_calibration_csv, 0, 0)
+        csv_layout.addWidget(self.btn_export_calibration_csv, 0, 1)
+        # --- END NEW ---
         
         self.data_table = QTableWidget(); self.data_table.itemChanged.connect(self.update_reference_value)
         # Set size policy to allow vertical resizing
@@ -206,21 +204,21 @@ class SpectraViewer(QMainWindow):
         lp_layout.addLayout(io_layout)
         lp_layout.addWidget(region_header_label)
         lp_layout.addLayout(region_layout)
-        lp_layout.addLayout(table_header_layout)
+        lp_layout.addWidget(table_header_label)
+        lp_layout.addLayout(csv_layout)
         lp_layout.addWidget(self.data_table)
         lp_layout.addWidget(perf_label)
         lp_layout.addLayout(perf_layout)
 
         # --- MODIFIED: Connect all button signals ---
-        self.btn_load_folder.clicked.connect(self.load_folder)
+        self.btn_load_folder.clicked.connect(self.load_spectra)
         self.btn_train_pls.clicked.connect(self.train_pls_model_action)
         self.btn_save_complete_project.clicked.connect(self.save_complete_project)
         self.btn_load_complete_project.clicked.connect(self.load_complete_project)
-        self.btn_save_reference_values.clicked.connect(self.save_reference_values)
-        self.btn_load_reference_values.clicked.connect(self.load_reference_values)
         self.btn_export_model.clicked.connect(self.export_model_for_prediction)
         self.btn_apply_region.clicked.connect(self.apply_region)
         self.btn_reset_region.clicked.connect(self.reset_region_view)
+        self.btn_import_calibration_csv.clicked.connect(self.import_calibration_csv)
         self.btn_export_calibration_csv.clicked.connect(self.export_calibration_csv)
         
         right_panel = self._create_plot_panel()
@@ -343,7 +341,22 @@ class SpectraViewer(QMainWindow):
         self.btn_deriv1.clicked.connect(lambda: self.apply_derivative(1)); self.btn_deriv2.clicked.connect(lambda: self.apply_derivative(2))
         self.toolbar = NavigationToolbar(self.canvas, self)
         self._style_matplotlib_toolbar()
-        layout.addLayout(plot_btn_layout); layout.addWidget(self.toolbar); layout.addWidget(self.canvas)
+        
+        # --- NEW: Add spectral data export controls under the graph ---
+        export_layout = QHBoxLayout()
+        self.btn_export_spa_individual = QPushButton("Export Individual CSV")
+        self.btn_export_spa_combined = QPushButton("Export Combined CSV")
+
+        export_layout.addWidget(self.btn_export_spa_individual)
+        export_layout.addWidget(self.btn_export_spa_combined)
+        export_layout.addStretch()  # Push buttons to the left
+
+        # Connect the export button signals
+        self.btn_export_spa_individual.clicked.connect(self.export_spa_individual_csv)
+        self.btn_export_spa_combined.clicked.connect(self.export_spa_combined_csv)
+        # --- END NEW ---
+
+        layout.addLayout(plot_btn_layout); layout.addWidget(self.toolbar); layout.addWidget(self.canvas); layout.addLayout(export_layout)
         container.setLayout(layout)
         self.reset_plot()
         self._update_derivative_display()  # Ensure initial button state is correct
@@ -380,6 +393,9 @@ class SpectraViewer(QMainWindow):
         folder_btn = msg_box.addButton("Load Folder", QMessageBox.ActionRole)
         files_btn = msg_box.addButton("Select Files", QMessageBox.ActionRole)
         cancel_btn = msg_box.addButton(QMessageBox.Cancel)
+        
+        # Set minimum width to prevent button text from being cut off
+        msg_box.setStyleSheet("QMessageBox { min-width: 350px; }")
         
         msg_box.exec_()
         
@@ -661,23 +677,35 @@ class SpectraViewer(QMainWindow):
         self.plot_spectra()
     # --- END NEW ---
 
-    # --- MODIFIED: load_folder to capture wavenumbers from the logic function ---
-    def load_folder(self):
-        """Load .spa files with user-friendly options for folder or individual file selection"""
+    # --- MODIFIED: load_spectra to support both .spa and .csv files ---
+    def load_spectra(self):
+        """Load spectral data with user-friendly options for .spa or .csv files"""
         # Ask user what they want to do
         msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Load .spa Files")
-        msg_box.setText("How would you like to load your .spa files?")
-        # msg_box.setInformativeText("Choose the option that best fits your needs:")
+        msg_box.setWindowTitle("Load Spectral Data")
+        msg_box.setText("How would you like to load your spectral data?")
         
-        folder_btn = msg_box.addButton("Load Folder", QMessageBox.ActionRole)
-        files_btn = msg_box.addButton("Select Files", QMessageBox.ActionRole)
+        folder_btn = msg_box.addButton("Load .spa Folder", QMessageBox.ActionRole)
+        files_btn = msg_box.addButton("Select .spa Files", QMessageBox.ActionRole)
+        csv_file_btn = msg_box.addButton("Load .csv File", QMessageBox.ActionRole)
+        csv_folder_btn = msg_box.addButton("Load .csv Folder", QMessageBox.ActionRole)
         cancel_btn = msg_box.addButton(QMessageBox.Cancel)
-        
+
         # Set tooltips for clarity
         folder_btn.setToolTip("Load all .spa files from a folder")
         files_btn.setToolTip("Choose specific .spa files")
-        
+        csv_file_btn.setToolTip("Load spectral data from a single CSV file")
+        csv_folder_btn.setToolTip("Load all CSV files from a folder")
+
+        # Set minimum width for each button to prevent text cutoff
+        min_btn_width = 240
+        for btn in [folder_btn, files_btn, csv_file_btn, csv_folder_btn, cancel_btn]:
+            btn.setMinimumWidth(min_btn_width)
+            btn.setStyleSheet("QPushButton { font-size: 10; padding: 8px 24px; min-width: 100px; }")
+
+        # Ensure dialog is wide and tall enough to display all buttons without clipping
+        msg_box.setStyleSheet("QMessageBox { min-width: 1050px; min-height: 220px; }")
+
         msg_box.exec_()
         
         if msg_box.clickedButton() == cancel_btn:
@@ -696,11 +724,11 @@ class SpectraViewer(QMainWindow):
                 return
                 
             self._update_all_dynamic_widgets()
-            self.reset_plot() # This will now reset the region view and plot
+            self.reset_plot()
             QMessageBox.information(self, "Success", f"Loaded {len(self.spectra_data)} spectra from folder.")
             
         elif msg_box.clickedButton() == files_btn:
-            # New individual file selection logic
+            # Individual .spa file selection logic
             file_paths, _ = QFileDialog.getOpenFileNames(
                 self, 
                 "Select .spa Files", 
@@ -731,6 +759,58 @@ class SpectraViewer(QMainWindow):
                 failed_count = len(file_paths) - len(self.spectra_data)
                 summary += f"\n{failed_count} files failed to load."
             QMessageBox.information(self, "Success", summary)
+            
+        elif msg_box.clickedButton() == csv_file_btn:
+            # CSV file selection logic
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, 
+                "Select CSV File with Spectral Data", 
+                "", 
+                "CSV Files (*.csv);;All Files (*)"
+            )
+            
+            if not file_path:
+                return
+            
+            # Store folder path for reference
+            self.current_folder_path = os.path.dirname(file_path)
+            
+            from logic.processing import load_csv_spectral_data
+            result = load_csv_spectral_data(file_path)
+            
+            if result[0] is None:
+                QMessageBox.critical(self, "Error", f"Failed to load CSV file:\n{result[1]}")
+                return
+                
+            self.spectra_data, self.wavenumbers = result
+            self._update_all_dynamic_widgets()
+            self.reset_plot()
+            
+            QMessageBox.information(self, "Success", f"Loaded {len(self.spectra_data)} spectra from CSV file.")
+            
+        elif msg_box.clickedButton() == csv_folder_btn:
+            # CSV folder selection logic
+            folder_path = QFileDialog.getExistingDirectory(self, "Select Folder Containing CSV Files")
+            if not folder_path:
+                return
+            
+            # Store folder path for reference
+            self.current_folder_path = folder_path
+            
+            from logic.processing import load_csv_folder_spectral_data
+            result = load_csv_folder_spectral_data(folder_path)
+            
+            if result[0] is None:
+                QMessageBox.critical(self, "Error", f"Failed to load CSV files from folder:\n{result[1]}")
+                return
+                
+            self.spectra_data, self.wavenumbers = result
+            self._update_all_dynamic_widgets()
+            self.reset_plot()
+            
+            QMessageBox.information(self, "Success", f"Loaded {len(self.spectra_data)} spectra from {folder_path}.")
+    
+    # --- MODIFIED: Rename method comment for clarity ---
 
     # --- MODIFIED: train_pls_model_action to loop through all components ---
     def train_pls_model_action(self):
@@ -858,11 +938,11 @@ class SpectraViewer(QMainWindow):
         
         # Propose a filename based on the first component, for convenience
         first_comp = self.chemical_components[0]['name'] if self.chemical_components else "project"
-        default_filename = f"{first_comp.replace(' ', '_')}_complete_project.pkl"
+        default_filename = f"{first_comp.replace(' ', '_')}_complete_project.irs"
         
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Save Complete Project", default_filename,
-            "Pickle Complete Project (*.pkl);;All Files (*)"
+            "IRIS Project (*.irs);;Legacy Pickle (*.pkl);;All Files (*)"
         )
         
         if not file_path:
@@ -884,7 +964,7 @@ class SpectraViewer(QMainWindow):
         """Load complete project including spectral data, models, and all settings"""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Load Complete Project", "",
-            "Pickle Complete Project (*.pkl);;All Files (*)"
+            "IRIS Project (*.irs);;Legacy Pickle (*.pkl);;All Files (*)"
         )
         
         if not file_path:
@@ -940,106 +1020,6 @@ class SpectraViewer(QMainWindow):
             
             QMessageBox.information(self, "Success", "Complete project loaded successfully!")
     
-    @Slot()
-    def save_reference_values(self):
-        """Save only reference values in a lightweight format"""
-        if not self.spectra_data:
-            QMessageBox.warning(self, "Warning", "No spectral data loaded. Please load spectra first.")
-            return
-        
-        # Check if there are any reference values to save
-        has_refs = any(data['refs'] for data in self.spectra_data.values())
-        if not has_refs:
-            QMessageBox.warning(self, "Warning", "No reference values entered. Please enter some reference values first.")
-            return
-        
-        # Propose a filename based on the first component, for convenience
-        first_comp = self.chemical_components[0]['name'] if self.chemical_components else "references"
-        default_filename = f"{first_comp.replace(' ', '_')}_reference_values.json"
-        
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Reference Values", default_filename,
-            "JSON Files (*.json);;All Files (*)"
-        )
-        
-        if not file_path:
-            return
-        
-        success, message = save_reference_values_only(
-            self.spectra_data, self.chemical_components, file_path
-        )
-        
-        if success:
-            QMessageBox.information(self, "Success", message)
-        else:
-            QMessageBox.critical(self, "Error", message)
-    
-    @Slot()
-    def load_reference_values(self):
-        """Load reference values from a lightweight reference values file"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Load Reference Values", "",
-            "JSON Files (*.json);;All Files (*)"
-        )
-        
-        if not file_path:
-            return
-        
-        ref_data, message = load_reference_values_only(file_path)
-        
-        if ref_data is None:
-            QMessageBox.critical(self, "Error", message)
-            return
-        
-        # Ask user how to handle the reference values
-        if self.spectra_data:
-            # If spectra are already loaded, ask if user wants to apply reference values
-            reply = QMessageBox.question(
-                self, "Load Reference Values",
-                f"{message}\n\nApply these reference values to currently loaded spectra?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
-            )
-            
-            if reply == QMessageBox.Yes:
-                reference_values = ref_data.get('reference_values', {})
-                updated_count, missing_spectra = apply_loaded_reference_values(
-                    self.spectra_data, reference_values
-                )
-                
-                # Update components if they don't exist
-                loaded_components = ref_data.get('chemical_components', [])
-                if loaded_components and not self.chemical_components:
-                    self.chemical_components = loaded_components
-                
-                # Update UI
-                self._update_all_dynamic_widgets()
-                
-                # Show summary
-                summary = f"Reference values applied!\n• {updated_count} spectra updated"
-                if missing_spectra:
-                    summary += f"\n• {len(missing_spectra)} spectra not found in current data"
-                    if len(missing_spectra) <= 5:
-                        summary += f"\n  Missing: {', '.join(missing_spectra)}"
-                
-                QMessageBox.information(self, "Success", summary)
-        else:
-            # If no spectra loaded, just load the components
-            reply = QMessageBox.question(
-                self, "Load Reference Values",
-                f"{message}\n\nNo spectra currently loaded. Load component definitions only?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
-            )
-            
-            if reply == QMessageBox.Yes:
-                loaded_components = ref_data.get('chemical_components', [])
-                if loaded_components:
-                    self.chemical_components = loaded_components
-                    self._update_all_dynamic_widgets()
-                    QMessageBox.information(self, "Success", f"Loaded {len(loaded_components)} component definitions.")
-                else:
-                    QMessageBox.information(self, "Info", "No component definitions found in the file.")
     
     # --- NEW: Export model for prediction method ---
     @Slot()
@@ -1195,7 +1175,108 @@ class SpectraViewer(QMainWindow):
         self.legend_visible = not self.legend_visible
         self.plot_spectra()
 
-    # --- NEW: CSV Export Methods ---
+    # --- NEW: CSV Import/Export Methods ---
+    @Slot()
+    def import_calibration_csv(self):
+        """Import calibration data reference values from CSV"""
+        if not self.spectra_data:
+            QMessageBox.warning(self, "Warning", "No spectral data loaded. Please load spectra first.")
+            return
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Import Calibration Data from CSV", "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                headers = next(reader)
+                
+                # Extract filename column and component columns
+                if not headers or headers[0].lower() != 'filename':
+                    QMessageBox.warning(self, "Import Error", "CSV file must have 'Filename' as the first column.")
+                    return
+                
+                component_headers = headers[1:]
+                
+                # Ask user if they want to update existing components or create new ones
+                reply = QMessageBox.question(
+                    self, "Import Components",
+                    f"Found {len(component_headers)} components in CSV:\n{', '.join(component_headers[:3])}{'...' if len(component_headers) > 3 else ''}\n\nCreate/update components from CSV?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    # Update or create components
+                    for header in component_headers:
+                        # Remove unit from header if present (e.g., "Protein (%)" -> "Protein")
+                        comp_name = header.split('(')[0].strip()
+                        unit = ""
+                        if '(' in header and ')' in header:
+                            unit = header.split('(')[1].split(')')[0].strip()
+                        
+                        # Check if component exists
+                        existing_comp = next((comp for comp in self.chemical_components if comp['name'] == comp_name), None)
+                        if not existing_comp:
+                            # Create new component
+                            new_component = {
+                                'name': comp_name,
+                                'abbreviation': comp_name[:3].upper(),
+                                'unit': unit,
+                                'pls_components': 10,
+                                'cv_folds': 5
+                            }
+                            self.chemical_components.append(new_component)
+                
+                # Read data rows
+                imported_count = 0
+                updated_count = 0
+                missing_spectra = []
+                
+                for row in reader:
+                    if not row:
+                        continue
+                    
+                    filename = row[0]
+                    if filename in self.spectra_data:
+                        # Update reference values
+                        for i, value_str in enumerate(row[1:]):
+                            if i < len(component_headers) and value_str.strip():
+                                try:
+                                    value = float(value_str)
+                                    comp_name = component_headers[i].split('(')[0].strip()
+                                    self.spectra_data[filename]['refs'][comp_name] = value
+                                    updated_count += 1
+                                except ValueError:
+                                    continue
+                        imported_count += 1
+                    else:
+                        missing_spectra.append(filename)
+                
+                # Update UI
+                self._update_all_dynamic_widgets()
+                
+                # Show summary
+                summary = f"CSV import completed!\n\n"
+                summary += f"• {imported_count} spectra updated\n"
+                summary += f"• {updated_count} reference values imported\n"
+                summary += f"• {len(self.chemical_components)} components total\n"
+                
+                if missing_spectra:
+                    summary += f"• {len(missing_spectra)} spectra not found in current data"
+                    if len(missing_spectra) <= 5:
+                        summary += f"\n  Missing: {', '.join(missing_spectra)}"
+                
+                QMessageBox.information(self, "Import Successful", summary)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Failed to import calibration data: {str(e)}")
+
     @Slot()
     def export_calibration_csv(self):
         """Export calibration data reference values to CSV"""
@@ -1330,4 +1411,97 @@ class SpectraViewer(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Failed to export prediction results: {str(e)}")
+
+    # --- NEW: Spectral Data Import/Export Methods ---
+    @Slot()
+    def export_spa_individual_csv(self):
+        """Export each loaded SPA file to individual CSV files"""
+        if not self.spectra_data:
+            QMessageBox.warning(self, "Warning", "No spectral data loaded. Please load SPA files first.")
+            return
+        
+        output_folder = QFileDialog.getExistingDirectory(
+            self, "Select Output Folder for Individual CSV Files"
+        )
+        
+        if not output_folder:
+            return
+        
+        success_count, error_messages = export_spa_to_csv_individual(
+            self.spectra_data, 
+            self.wavenumbers, 
+            output_folder, 
+            self.current_derivative
+        )
+        
+        # Show results
+        derivative_info = ""
+        if self.current_derivative == 1:
+            derivative_info = " (1st derivative applied)"
+        elif self.current_derivative == 2:
+            derivative_info = " (2nd derivative applied)"
+        
+        if error_messages:
+            detailed_text = "\n".join(error_messages)
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Export Results")
+            msg_box.setText(f"Export completed with some errors.\n\nSuccessfully exported: {success_count} files{derivative_info}")
+            msg_box.setDetailedText(detailed_text)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.exec()
+        else:
+            QMessageBox.information(
+                self, "Export Successful", 
+                f"Successfully exported {success_count} SPA files to individual CSV files{derivative_info}!\n\n"
+                f"Output folder: {output_folder}\n"
+                f"Files created: {success_count}"
+            )
+
+    @Slot()
+    def export_spa_combined_csv(self):
+        """Export all loaded SPA files to a single combined CSV file"""
+        if not self.spectra_data:
+            QMessageBox.warning(self, "Warning", "No spectral data loaded. Please load SPA files first.")
+            return
+        
+        # Propose filename based on current settings
+        derivative_suffix = ""
+        if self.current_derivative == 1:
+            derivative_suffix = "_1st_derivative"
+        elif self.current_derivative == 2:
+            derivative_suffix = "_2nd_derivative"
+        
+        default_filename = f"combined_spectra{derivative_suffix}.csv"
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Combined CSV File", default_filename,
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        success, error_message = export_spa_to_csv_combined(
+            self.spectra_data,
+            self.wavenumbers,
+            file_path,
+            self.current_derivative
+        )
+        
+        if success:
+            derivative_info = ""
+            if self.current_derivative == 1:
+                derivative_info = " (1st derivative applied)"
+            elif self.current_derivative == 2:
+                derivative_info = " (2nd derivative applied)"
+            
+            QMessageBox.information(
+                self, "Export Successful",
+                f"Successfully exported {len(self.spectra_data)} SPA files to combined CSV{derivative_info}!\n\n"
+                f"File: {file_path}\n"
+                f"Columns: Wavenumber + {len(self.spectra_data)} spectra\n"
+                f"Data points: {len(self.wavenumbers)}"
+            )
+        else:
+            QMessageBox.critical(self, "Export Error", f"Failed to export combined CSV: {error_message}")
     # --- END NEW ---

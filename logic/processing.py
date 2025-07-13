@@ -565,6 +565,256 @@ def apply_loaded_reference_values(spectra_data, reference_values):
     
     return updated_count, missing_spectra
 
+def load_csv_spectral_data(file_path):
+    """
+    Load spectral data from CSV file.
+    Expected format: First column is wavenumber, subsequent columns are spectra.
+    
+    Parameters:
+    - file_path: Path to CSV file
+    
+    Returns:
+    - tuple: (spectra_data, wavenumbers) or (None, None) if failed
+    """
+    try:
+        import pandas as pd
+        
+        # Read CSV file
+        df = pd.read_csv(file_path)
+        
+        # First column should be wavenumbers
+        if df.shape[1] < 2:
+            return None, "CSV file must have at least 2 columns (wavenumber + at least 1 spectrum)"
+        
+        # Extract wavenumbers (first column)
+        wavenumbers = df.iloc[:, 0].values
+        
+        # Extract spectra data (remaining columns)
+        spectra_data = {}
+        base_filename = os.path.splitext(os.path.basename(file_path))[0]  # Get filename without extension
+        
+        for i, col in enumerate(df.columns[1:]):
+            intensity_data = df[col].values
+            
+            # Create a meaningful filename based on the CSV file name and column
+            if len(df.columns) == 2:  # Only one spectrum column
+                spectrum_name = f"{base_filename}.spa"
+            else:  # Multiple spectrum columns
+                if col.lower() == 'intensity':
+                    spectrum_name = f"{base_filename}.spa"
+                else:
+                    # Use the column name directly if it's not generic
+                    if col and col.strip() and not col.lower().startswith('unnamed'):
+                        spectrum_name = f"{col}.spa"
+                    else:
+                        spectrum_name = f"{base_filename}_spectrum_{i+1}.spa"
+            
+            # Create a mock spectrochempy-like object for compatibility
+            class MockSpectrum:
+                def __init__(self, wavenumbers, intensity):
+                    self.x = MockAxis(wavenumbers)
+                    self.data = intensity
+            
+            class MockAxis:
+                def __init__(self, data):
+                    self.data = data
+            
+            spectra_data[spectrum_name] = {
+                'intensity': intensity_data,
+                'nd': MockSpectrum(wavenumbers, intensity_data),
+                'refs': {}  # Initialize empty reference values
+            }
+        
+        return spectra_data, wavenumbers
+        
+    except Exception as e:
+        return None, f"Error loading CSV: {str(e)}"
+
+
+def load_csv_folder_spectral_data(folder_path):
+    """
+    Load spectral data from all CSV files in a folder.
+    Expected format: First column is wavenumber, subsequent columns are spectra.
+    
+    Parameters:
+    - folder_path: Path to folder containing CSV files
+    
+    Returns:
+    - tuple: (spectra_data, wavenumbers) or (None, None) if failed
+    """
+    try:
+        import pandas as pd
+        import glob
+        
+        # Get all CSV files in the folder
+        csv_files = glob.glob(os.path.join(glob.escape(folder_path), '*.csv'))
+        
+        if not csv_files:
+            return None, "No CSV files found in the selected folder"
+        
+        combined_spectra_data = {}
+        wavenumbers = None
+        
+        for csv_file in csv_files:
+            try:
+                # Read each CSV file
+                df = pd.read_csv(csv_file)
+                
+                # First column should be wavenumbers
+                if df.shape[1] < 2:
+                    continue  # Skip files that don't have proper format
+                
+                # Extract wavenumbers from first file (assume all files have same wavenumber axis)
+                if wavenumbers is None:
+                    wavenumbers = df.iloc[:, 0].values
+                
+                # Extract spectra data (remaining columns)
+                base_filename = os.path.splitext(os.path.basename(csv_file))[0]
+                
+                for i, col in enumerate(df.columns[1:]):
+                    intensity_data = df[col].values
+                    
+                    # Create a meaningful filename based on the CSV file name and column
+                    if len(df.columns) == 2:  # Only one spectrum column
+                        spectrum_name = f"{base_filename}.spa"
+                    else:  # Multiple spectrum columns
+                        if col.lower() == 'intensity':
+                            spectrum_name = f"{base_filename}.spa"
+                        else:
+                            # Use the column name directly if it's not generic
+                            if col and col.strip() and not col.lower().startswith('unnamed'):
+                                spectrum_name = f"{base_filename}_{col}.spa"
+                            else:
+                                spectrum_name = f"{base_filename}_spectrum_{i+1}.spa"
+                    
+                    # Create a mock spectrochempy-like object for compatibility
+                    class MockSpectrum:
+                        def __init__(self, wavenumbers, intensity):
+                            self.x = MockAxis(wavenumbers)
+                            self.data = intensity
+                    
+                    class MockAxis:
+                        def __init__(self, data):
+                            self.data = data
+                    
+                    combined_spectra_data[spectrum_name] = {
+                        'intensity': intensity_data,
+                        'nd': MockSpectrum(wavenumbers, intensity_data),
+                        'refs': {}  # Initialize empty reference values
+                    }
+                    
+            except Exception as e:
+                print(f"Error loading CSV file {csv_file}: {str(e)}")
+                continue
+        
+        if not combined_spectra_data:
+            return None, "No valid spectral data found in CSV files"
+        
+        return combined_spectra_data, wavenumbers
+        
+    except Exception as e:
+        return None, f"Error loading CSV files: {str(e)}"
+
+
+def export_spa_to_csv_individual(spectra_data, wavenumbers, output_folder, derivative_order=0):
+    """
+    Export each loaded .spa file to individual CSV files.
+    
+    Parameters:
+    - spectra_data: Dictionary containing spectral data
+    - wavenumbers: Wavenumber axis array
+    - output_folder: Path to output folder
+    - derivative_order: Derivative processing to apply (0=original, 1=1st, 2=2nd)
+    
+    Returns:
+    - tuple: (success_count, error_messages)
+    """
+    import os
+    import csv
+    
+    success_count = 0
+    error_messages = []
+    
+    # Ensure output folder exists
+    os.makedirs(output_folder, exist_ok=True)
+    
+    for filename, data in spectra_data.items():
+        try:
+            # Get processed intensity based on derivative order
+            processed_intensity = get_processed_intensity(data['intensity'], derivative_order)
+            
+            # Create CSV filename
+            base_name = os.path.splitext(filename)[0]
+            derivative_suffix = ""
+            if derivative_order == 1:
+                derivative_suffix = "_1st_derivative"
+            elif derivative_order == 2:
+                derivative_suffix = "_2nd_derivative"
+            
+            csv_filename = f"{base_name}{derivative_suffix}.csv"
+            csv_path = os.path.join(output_folder, csv_filename)
+            
+            # Write to CSV
+            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Write header
+                writer.writerow(['Wavenumber_cm-1', 'Intensity'])
+                
+                # Write data
+                for wavenumber, intensity in zip(wavenumbers, processed_intensity):
+                    writer.writerow([f"{wavenumber:.2f}", f"{intensity:.6f}"])
+            
+            success_count += 1
+            
+        except Exception as e:
+            error_messages.append(f"Failed to export {filename}: {str(e)}")
+    
+    return success_count, error_messages
+
+
+def export_spa_to_csv_combined(spectra_data, wavenumbers, output_file, derivative_order=0):
+    """
+    Export all loaded .spa files to a single combined CSV file.
+    
+    Parameters:
+    - spectra_data: Dictionary containing spectral data
+    - wavenumbers: Wavenumber axis array
+    - output_file: Path to output CSV file
+    - derivative_order: Derivative processing to apply (0=original, 1=1st, 2=2nd)
+    
+    Returns:
+    - tuple: (success, error_message)
+    """
+    import csv
+    
+    try:
+        with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            
+            # Create header
+            header = ['Wavenumber_cm-1'] + list(spectra_data.keys())
+            writer.writerow(header)
+            
+            # Write data row by row
+            for i, wavenumber in enumerate(wavenumbers):
+                row = [f"{wavenumber:.2f}"]
+                
+                for filename in spectra_data.keys():
+                    processed_intensity = get_processed_intensity(
+                        spectra_data[filename]['intensity'], 
+                        derivative_order
+                    )
+                    row.append(f"{processed_intensity[i]:.6f}")
+                
+                writer.writerow(row)
+        
+        return True, None
+        
+    except Exception as e:
+        return False, str(e)
+
+
 def reconstruct_spectra_data(spectral_data, reference_values, wavenumbers):
     """
     Reconstruct the full spectra_data structure from saved project data.
