@@ -1,11 +1,11 @@
 ; Inno Setup Script for IRIS UPLB Chemometrics
 ; This script creates a professional Windows installer
 
-#define MyAppName "IRIS UPLB Chemometrics"
+#define MyAppName "IRIS"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "IRIS UPLB"
 #define MyAppURL "https://www.uplb.edu.ph/"
-#define MyAppExeName "IRIS_UPLB_Chemometrics.exe"
+#define MyAppExeName "IRIS.exe"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
@@ -25,8 +25,9 @@ LicenseFile=
 InfoBeforeFile=
 InfoAfterFile=
 OutputDir=output
-OutputBaseFilename=IRIS_UPLB_Chemometrics_Setup
+OutputBaseFilename=IRIS_Setup
 SetupIconFile=
+; SetupIconFile=icon.png  ; Disabled due to size limitations - PNG not supported for setup icon
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -42,7 +43,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1
 
 [Files]
-Source: "dist\IRIS_UPLB_Chemometrics\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\IRIS\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

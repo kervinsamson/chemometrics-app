@@ -3,10 +3,12 @@
 # Set PyInstaller options
 $pyinstaller_options = @(
     "main.py",
-    "--name", "IRIS_UPLB_Chemometrics",
+    "--name", "IRIS",
     "--windowed",
     "--clean",
+    "--icon", "icon.ico",
     # Add data files
+    "--add-data", "icon.ico;.",
     "--add-data", "spa_data;spa_data",
     "--add-data", "Cassava (HCN);Cassava (HCN)",
     "--add-data", "Spectral data;Spectral data",

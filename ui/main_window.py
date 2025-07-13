@@ -38,7 +38,7 @@ from .stylesheet import UP_MAROON, UP_FOREST_GREEN, UP_WHITE, UP_LIGHT_GRAY, UP_
 class SpectraViewer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("IRIS - UPLB-IPB")
+        self.setWindowTitle("IRIS")
         self.setGeometry(100, 100, 1600, 900)
 
         # --- Application State Variables ---

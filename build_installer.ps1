@@ -11,7 +11,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Configuration
-$AppName = "IRIS_UPLB_Chemometrics"
+$AppName = "IRIS"
 $BuildDir = "build"
 $DistDir = "dist"
 $OutputDir = "output"
