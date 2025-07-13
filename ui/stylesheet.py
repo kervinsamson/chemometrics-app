@@ -18,7 +18,7 @@ STYLESHEET = f"""
     QTabWidget::pane {{ border: none; margin: 0px; padding: 0px; }}
     QTabBar {{ margin: 0px; padding: 0px; }}
     QTabBar::tab {{
-        background: {UP_MEDIUM_GRAY}; color: {UP_DARK_GRAY}; padding: 10px;
+        background: {UP_MEDIUM_GRAY}; color: {UP_DARK_GRAY}; padding-left: 12px; padding-right: 12px; padding-top: 8px; padding-bottom: 8px;
         font-weight: bold;
         min-width: 100px; margin-right: 2px;
     }}
@@ -31,11 +31,63 @@ STYLESHEET = f"""
     #ControlPanel {{ 
         background-color: {UP_MAROON}; 
         min-width: 371px;
-        margin-left: -12px;
+        margin-left: -8px;
+        padding-right: 4px;
     }}
+    
+    #ControlPanelScrollArea {{
+        background-color: {UP_MAROON};
+        border: none;
+        min-width: 371px;
+        margin-left: -8px;
+        padding-left: 8px;
+    }}
+    
+    /* --- Specific scrollbar styling for control panel --- */
+    #ControlPanelScrollArea QScrollBar:vertical {{
+        background-color: {UP_MAROON};
+        width: 8px;
+        margin: 0px;
+        border: none;
+    }}
+    
+    #ControlPanelScrollArea QScrollBar::handle:vertical {{
+        background-color: {UP_MEDIUM_GRAY};
+        min-height: 20px;
+        margin: 1px;
+    }}
+    
+    #ControlPanelScrollArea QScrollBar::handle:vertical:hover {{
+        background-color: {UP_DARK_GRAY};
+    }}
+    
+    #ControlPanelScrollArea QScrollBar::handle:vertical:pressed {{
+        background-color: {UP_DARK_GRAY};
+    }}
+    
+    #ControlPanelScrollArea QScrollBar::add-line:vertical, #ControlPanelScrollArea QScrollBar::sub-line:vertical {{
+        height: 0px;
+        subcontrol-origin: margin;
+    }}
+    
+    #ControlPanelScrollArea QScrollBar::add-page:vertical, #ControlPanelScrollArea QScrollBar::sub-page:vertical {{
+        background: none;
+    }}
+    
     #PanelHeaderLabel {{
-        background-color: {UP_FOREST_GREEN}; color: {UP_WHITE}; font-size: 10pt; font-weight: bold;
-        padding: 8px; border-radius: 5px; qproperty-alignment: 'AlignCenter';
+        background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                   stop: 0 {UP_FOREST_GREEN}, stop: 1 #0E3827);
+        color: {UP_WHITE}; 
+        font-size: 10pt; 
+        font-weight: 600;
+        padding: 8px 12px; 
+        border: none;
+        border-left: 4px solid {UP_GOLD};
+        border-radius: 6px;
+        qproperty-alignment: 'AlignLeft';
+        margin: 4px 0px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }}
     
     #ResultsPanel {{
@@ -273,26 +325,28 @@ STYLESHEET = f"""
 
     /* --- Custom Scrollbar Styling --- */
     QScrollBar:vertical {{
-        background-color: {UP_LIGHT_GRAY};
-        width: 14px;
+        background-color: {UP_WHITE};
+        width: 12px;
         margin: 0px;
-        border: none;
-        border-radius: 7px;
+        border: 1px solid {UP_MEDIUM_GRAY};
+        border-left: none;
     }}
     
     QScrollBar::handle:vertical {{
-        background-color: {UP_FOREST_GREEN};
+        background-color: {UP_MEDIUM_GRAY};
         min-height: 30px;
-        border-radius: 7px;
         margin: 2px;
+        border: 1px solid {UP_LIGHT_GRAY};
     }}
     
     QScrollBar::handle:vertical:hover {{
-        background-color: #1A5C40;
+        background-color: {UP_DARK_GRAY};
+        border-color: {UP_GOLD};
     }}
     
     QScrollBar::handle:vertical:pressed {{
-        background-color: #0E3827;
+        background-color: {UP_FOREST_GREEN};
+        border-color: {UP_GOLD};
     }}
     
     /* Hide the arrow buttons completely for a cleaner look */
@@ -302,31 +356,31 @@ STYLESHEET = f"""
     }}
     
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-        background: none;
+        background: {UP_WHITE};
     }}
     
     /* Horizontal scrollbar */
     QScrollBar:horizontal {{
         background-color: {UP_LIGHT_GRAY};
-        height: 14px;
+        height: 10px;
         margin: 0px;
         border: none;
-        border-radius: 7px;
+        border-radius: 5px;
     }}
     
     QScrollBar::handle:horizontal {{
-        background-color: {UP_FOREST_GREEN};
+        background-color: {UP_MEDIUM_GRAY};
         min-width: 30px;
-        border-radius: 7px;
+        border-radius: 5px;
         margin: 2px;
     }}
     
     QScrollBar::handle:horizontal:hover {{
-        background-color: #1A5C40;
+        background-color: {UP_DARK_GRAY};
     }}
     
     QScrollBar::handle:horizontal:pressed {{
-        background-color: #0E3827;
+        background-color: {UP_DARK_GRAY};
     }}
     
     /* Hide the arrow buttons completely for a cleaner look */

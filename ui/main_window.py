@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
     QSplitter, QGridLayout, QLabel, QHeaderView, QMessageBox,
-    QSpinBox, QTabWidget, QComboBox, QLineEdit, QTextEdit, QCheckBox, QSizePolicy
+    QSpinBox, QTabWidget, QComboBox, QLineEdit, QTextEdit, QCheckBox, QSizePolicy, QScrollArea
 )
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QTextOption
@@ -116,10 +116,18 @@ class SpectraViewer(QMainWindow):
         main_layout.setContentsMargins(0,0,0,0)
 
         left_panel = QWidget(); left_panel.setObjectName("ControlPanel")
-        lp_layout = QVBoxLayout(left_panel); lp_layout.setContentsMargins(15, 15, 15, 15); lp_layout.setSpacing(10)
+        lp_layout = QVBoxLayout(left_panel); lp_layout.setContentsMargins(15, 15, 15, 15); lp_layout.setSpacing(6)
+        
+        # Create a scroll area for the left panel
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(left_panel)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setObjectName("ControlPanelScrollArea")
         
         # --- MODIFIED: Simplified Training Controls ---
-        train_layout = QGridLayout(); train_layout.setSpacing(8)
+        train_layout = QGridLayout(); train_layout.setSpacing(6)
         self.btn_load_folder = QPushButton("1. Load .spa Files (Folder or Individual)")
         lbl_step2 = QLabel("2. Enter Reference Values in Table"); lbl_step2.setObjectName("PerfLabel")
         lbl_step3 = QLabel("3. Define Components in 'Components' Tab"); lbl_step3.setObjectName("PerfLabel")
@@ -133,7 +141,7 @@ class SpectraViewer(QMainWindow):
 
         # --- NEW: Import/Export Controls ---
         io_header_label = QLabel("Project Management"); io_header_label.setObjectName("PanelHeaderLabel")
-        io_layout = QGridLayout(); io_layout.setSpacing(8)
+        io_layout = QGridLayout(); io_layout.setSpacing(6)
         self.btn_save_complete_project = QPushButton("Save Complete Project")
         self.btn_load_complete_project = QPushButton("Load Complete Project")
         self.btn_save_reference_values = QPushButton("Save Reference Values")
@@ -146,7 +154,7 @@ class SpectraViewer(QMainWindow):
 
         # --- Region Selection / Zoom Controls (Unchanged) ---
         region_header_label = QLabel("Region Selection / Zoom"); region_header_label.setObjectName("PanelHeaderLabel")
-        region_layout = QGridLayout(); region_layout.setSpacing(8)
+        region_layout = QGridLayout(); region_layout.setSpacing(6)
         
         lbl_start = QLabel("Start (cm⁻¹):"); lbl_start.setObjectName("PerfLabel")
         self.start_region_input = QLineEdit(); self.start_region_input.setPlaceholderText("e.g., 3000")
@@ -216,7 +224,7 @@ class SpectraViewer(QMainWindow):
         self.btn_export_calibration_csv.clicked.connect(self.export_calibration_csv)
         
         right_panel = self._create_plot_panel()
-        main_splitter.addWidget(left_panel)
+        main_splitter.addWidget(scroll_area)
         main_splitter.addWidget(right_panel)
         main_splitter.setStretchFactor(0, 1); main_splitter.setStretchFactor(1, 2)
         return main_widget
