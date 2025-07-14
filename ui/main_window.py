@@ -73,7 +73,7 @@ class SpectraViewer(QMainWindow):
         self.tabs.setUsesScrollButtons(True)
         # Ensure tabs are left-aligned on macOS
         self.tabs.setDocumentMode(True)
-        self.setCentralWidget(self.tabs)
+        # self.setCentralWidget(self.tabs)
         self.calibration_tab = self._create_calibration_tab()
         self.components_tab = self._create_components_tab()
         self.prediction_tab = self._create_prediction_tab()
