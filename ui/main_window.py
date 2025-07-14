@@ -71,6 +71,8 @@ class SpectraViewer(QMainWindow):
         self.tabs.setTabPosition(QTabWidget.North)  # Use North for top tabs
         # Align tabs to the left (default behavior, but making it explicit)
         self.tabs.setUsesScrollButtons(True)
+        # Ensure tabs are left-aligned on macOS
+        self.tabs.setDocumentMode(True)
         self.setCentralWidget(self.tabs)
         self.calibration_tab = self._create_calibration_tab()
         self.components_tab = self._create_components_tab()
