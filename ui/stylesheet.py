@@ -16,11 +16,17 @@ STYLESHEET = f"""
     QMainWindow, QWidget {{ background-color: {UP_LIGHT_GRAY}; font-family: Segoe UI, Arial, sans-serif; }}
     QTabWidget {{ margin: 0px; padding: 0px; }}
     QTabWidget::pane {{ border: none; margin: 0px; padding: 0px; }}
-    QTabBar {{ margin: 0px; padding: 0px; }}
+    QTabBar {{ 
+        margin: 0px; 
+        padding: 0px; 
+        alignment: left;
+        qproperty-alignment: AlignLeft;
+    }}
     QTabBar::tab {{
         background: {UP_MEDIUM_GRAY}; color: {UP_DARK_GRAY}; padding-left: 12px; padding-right: 12px; padding-top: 8px; padding-bottom: 8px;
         font-weight: bold;
         min-width: 100px; margin-right: 2px;
+        text-align: left;
     }}
     QTabBar::tab:selected {{
         background: {UP_FOREST_GREEN}; color: {UP_WHITE}; border-bottom: 3px solid {UP_GOLD};
