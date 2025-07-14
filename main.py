@@ -21,10 +21,18 @@ def main():
     # Handle PyInstaller bundle and development paths
     if getattr(sys, 'frozen', False):
         # Running as PyInstaller bundle
-        icon_path = os.path.join(sys._MEIPASS, "icon.ico")
+        # Try .icns first (macOS), then .ico (Windows/Linux)
+        if os.path.exists(os.path.join(sys._MEIPASS, "icon.icns")):
+            icon_path = os.path.join(sys._MEIPASS, "icon.icns")
+        else:
+            icon_path = os.path.join(sys._MEIPASS, "icon.ico")
     else:
         # Running in development
-        icon_path = os.path.join(os.path.dirname(__file__), "icon.ico")
+        # Try .icns first (macOS), then .ico (Windows/Linux)
+        if os.path.exists(os.path.join(os.path.dirname(__file__), "icon.icns")):
+            icon_path = os.path.join(os.path.dirname(__file__), "icon.icns")
+        else:
+            icon_path = os.path.join(os.path.dirname(__file__), "icon.ico")
     
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
