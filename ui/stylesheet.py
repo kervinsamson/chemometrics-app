@@ -19,7 +19,6 @@ STYLESHEET = f"""
     QTabBar {{ 
         margin: 0px; 
         padding: 0px; 
-        alignment: left;
         qproperty-alignment: AlignLeft;
     }}
     QTabBar::tab {{
