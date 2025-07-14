@@ -14,11 +14,17 @@ UP_WHITE, UP_LIGHT_GRAY, UP_DARK_GRAY, UP_MEDIUM_GRAY = "#FFFFFF", "#F0F0F0", "#
 STYLESHEET = f"""
     /* --- General and Tab Styling --- */
     QMainWindow, QWidget {{ background-color: {UP_LIGHT_GRAY}; font-family: Segoe UI, Arial, sans-serif; }}
-    QTabWidget {{ margin: 0px; padding: 0px; }}
+    QTabWidget {{ 
+        margin: 0px; 
+        padding: 0px; 
+        qproperty-alignment: 'AlignLeft | AlignTop';
+    }}
     QTabWidget::pane {{ border: none; margin: 0px; padding: 0px; }}
     QTabBar {{ 
         margin: 0px; 
-        padding: 0px; 
+        padding: 0px;
+        alignment: left;
+        qproperty-alignment: 'AlignLeft | AlignVCenter';
     }}
     QTabBar::tab {{
         background: {UP_MEDIUM_GRAY}; color: {UP_DARK_GRAY}; padding-left: 12px; padding-right: 12px; padding-top: 8px; padding-bottom: 8px;
