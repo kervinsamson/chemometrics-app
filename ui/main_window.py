@@ -68,7 +68,9 @@ class SpectraViewer(QMainWindow):
         # --- UI Setup ---
         self.tabs = QTabWidget()
         # Set tab position to ensure consistent appearance across platforms
-        self.tabs.setTabPosition(Qt.AlignLeft)
+        self.tabs.setTabPosition(QTabWidget.North)  # Use North for top tabs
+        # Align tabs to the left (default behavior, but making it explicit)
+        self.tabs.setUsesScrollButtons(True)
         self.setCentralWidget(self.tabs)
         self.calibration_tab = self._create_calibration_tab()
         self.components_tab = self._create_components_tab()

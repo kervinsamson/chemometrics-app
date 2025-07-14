@@ -19,7 +19,6 @@ STYLESHEET = f"""
     QTabBar {{ 
         margin: 0px; 
         padding: 0px; 
-        qproperty-alignment: AlignLeft;
     }}
     QTabBar::tab {{
         background: {UP_MEDIUM_GRAY}; color: {UP_DARK_GRAY}; padding-left: 12px; padding-right: 12px; padding-top: 8px; padding-bottom: 8px;
